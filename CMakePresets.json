@@ -1,0 +1,40 @@
+{
+  "version": 8,
+  "cmakeMinimumRequired": { "major": 3, "minor": 31, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "vs2026-x64",
+      "displayName": "Visual Studio 2026 (v145) x64 + vcpkg",
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64",
+      "toolset": "v145",
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "VCPKG_MANIFEST_MODE": "ON"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "configurePreset": "vs2026-x64", "configuration": "Debug" },
+    { "name": "release", "configurePreset": "vs2026-x64", "configuration": "Release" }
+  ],
+  "testPresets": [
+    {
+      "name": "release",
+      "configurePreset": "vs2026-x64",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true },
+      "filter": { "exclude": { "label": "perf" } }
+    },
+    {
+      "name": "perf",
+      "configurePreset": "vs2026-x64",
+      "configuration": "Release",
+      "output": { "verbose": true },
+      "filter": { "include": { "label": "perf" } }
+    }
+  ]
+}

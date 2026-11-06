@@ -1,0 +1,74 @@
+# LegacyAVR - build and test (TEMPLATE, DISABLED)
+#
+# This workflow is deliberately disabled:
+#   * it only runs when started by hand (workflow_dispatch), and
+#   * every job has `if: false`.
+# To enable it, remove the `if: false` lines, and add `push` / `pull_request` triggers if wanted.
+#
+# Notes before enabling:
+#   * The project targets Visual Studio 2026 (MSVC v145, C++23) and .NET 10. GitHub-hosted
+#     `windows-latest` images may not include VS 2026 yet - check the runner image documentation, or use a
+#     self-hosted Windows 11 runner with VS 2026 Build Tools and the .NET 10 SDK.
+#   * The first FFmpeg build through vcpkg takes a long time; the vcpkg binary cache below keeps later runs fast.
+#   * Builds are native Windows builds only.
+
+name: build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+
+jobs:
+  native:
+    name: Engine + native tests (CMake, C++23)
+    if: false
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Export GitHub Actions cache variables for vcpkg
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Set up MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure (vcpkg manifest mode)
+        shell: pwsh
+        run: |
+          if (-not $env:VCPKG_ROOT) { $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT }
+          cmake --preset vs2026-x64
+
+      - name: Build
+        run: cmake --build --preset release
+
+      - name: Test
+        run: ctest --preset release --output-on-failure
+
+  dotnet:
+    name: Dashboard + .NET tests (.NET 10)
+    if: false
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build dashboard
+        run: dotnet build ui/LegacyAVR.UI/LegacyAVR.UI.csproj -c Release -p:Platform=x64
+
+      - name: Run .NET tests
+        run: dotnet test ui/LegacyAVR.UI.Tests/LegacyAVR.UI.Tests.csproj -c Release -p:Platform=x64

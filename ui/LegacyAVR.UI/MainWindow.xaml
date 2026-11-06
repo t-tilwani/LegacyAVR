@@ -1,0 +1,1180 @@
+<Window x:Class="LegacyAVR.UI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:LegacyAVR.UI.ViewModels"
+        xmlns:ctl="clr-namespace:LegacyAVR.UI.Controls"
+        xmlns:sys="clr-namespace:System;assembly=mscorlib"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
+        Title="LegacyAVR" Width="1280" Height="900" MinWidth="1080" MinHeight="720"
+        WindowStartupLocation="CenterScreen"
+        Style="{StaticResource DarkWindow}">
+
+    <Window.Resources>
+        <sys:Boolean x:Key="True">True</sys:Boolean>
+        <ctl:HelpControlSelector x:Key="HelpCtlSelector" />
+
+        <!-- Speaker box for the diagnostics room diagram; Tag = "is test target" -->
+        <Style x:Key="SpeakerBox" TargetType="Border">
+            <Setter Property="Width" Value="64" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Background" Value="{StaticResource Surface2}" />
+            <Setter Property="BorderBrush" Value="{StaticResource Line}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Style.Triggers>
+                <Trigger Property="Tag" Value="{StaticResource True}">
+                    <Setter Property="Background" Value="{StaticResource Accent}" />
+                    <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Format drop-down entry: formats the output device did not report are dimmed and labelled -->
+        <DataTemplate x:Key="CodecItem" DataType="{x:Type vm:CodecChoice}">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock x:Name="lbl" Text="{Binding Label}" />
+                <TextBlock x:Name="note" Text="   not supported by this output" Foreground="{StaticResource Warn}" FontSize="11"
+                           VerticalAlignment="Center" Visibility="Collapsed" />
+            </StackPanel>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Supported}" Value="False">
+                    <Setter TargetName="lbl" Property="Opacity" Value="0.5" />
+                    <Setter TargetName="note" Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <!-- One meter cell (input endpoint channels and output channels share it so they line up) -->
+        <DataTemplate x:Key="MeterCell" DataType="{x:Type vm:InputMeterViewModel}">
+            <StackPanel Margin="0,0,6,0">
+                <ctl:VuMeter Orientation="Horizontal" Height="8" RmsDb="{Binding RmsDb}" PeakDb="{Binding PeakDb}" MinDb="-60"
+                             IsDimmed="{Binding IsPresent, Converter={StaticResource Not}}" />
+                <TextBlock Text="{Binding Name}" Style="{StaticResource Mono}" FontSize="10" HorizontalAlignment="Center" Margin="0,3,0,0" />
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- One output channel strip. v1.4.0: EQ button (opens that channel's EQ) and a reset
+             button for the trim; strips stop growing beyond a useful width/height. -->
+        <DataTemplate x:Key="ChannelStrip" DataType="{x:Type vm:ChannelStripViewModel}">
+            <Border Style="{StaticResource Card}" Margin="0,0,10,0" Padding="12" MaxWidth="170" MaxHeight="600" VerticalAlignment="Top">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="{Binding ShortName}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Row="1" Text="{Binding LongName}" Style="{StaticResource Dim}" FontSize="11"
+                               HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,10" />
+                    <Grid Grid.Row="2" HorizontalAlignment="Center" MinHeight="200">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="18" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ctl:VuMeter RmsDb="{Binding RmsDb}" PeakDb="{Binding PeakDb}" MinDb="-60"
+                                     IsDimmed="{Binding IsActive, Converter={StaticResource Not}}" />
+                        <Slider Grid.Column="2" Orientation="Vertical" Minimum="-48.5" Maximum="6" SmallChange="0.5" LargeChange="3"
+                                Value="{Binding GainDb, Mode=TwoWay}" ToolTip="Speaker trim: +6 dB to -48 dB, bottom = mute" />
+                    </Grid>
+                    <StackPanel Grid.Row="3" Margin="0,10,0,8" HorizontalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <TextBlock Text="{Binding GainText}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <Button Style="{StaticResource ResetButton}" CommandParameter="{Binding ResetKey}"
+                                    Command="{Binding DataContext.ResetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    ToolTip="Reset this trim to 0 dB (asks first)" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding PeakDb, Converter={StaticResource DbText}, StringFormat='peak {0}'}"
+                                   Style="{StaticResource Mono}" HorizontalAlignment="Center" />
+                    </StackPanel>
+                    <Button Grid.Row="4" Content="EQ" Style="{StaticResource SmallButton}" Margin="0,0,0,6" ToolTip="{Binding Eq.Summary}"
+                            Command="{Binding DataContext.OpenEqCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            CommandParameter="{Binding Index}" />
+                    <ToggleButton Grid.Row="5" Style="{StaticResource MuteToggle}" IsChecked="{Binding IsMuted, Mode=TwoWay}" />
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <!-- v1.4.0: profiles (replace presets and device profiles). DataContext = MainViewModel.
+             Used in the Output tab and in the Settings guide. -->
+        <DataTemplate x:Key="ProfilesPanel">
+            <StackPanel>
+                <TextBlock Text="PROFILES" Style="{StaticResource Caption}" />
+                <TextBlock Text="{Binding ProfilesTitle}" Style="{StaticResource Dim}" Margin="0,2,0,4" TextWrapping="Wrap" />
+                <ListBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile, Mode=TwoWay}" MaxHeight="200"
+                         DisplayMemberPath="Display" Margin="0,0,0,6" />
+                <TextBlock Text="{Binding SelectedProfileDetails}" Style="{StaticResource Dim}" FontSize="11" Margin="0,0,0,6" TextWrapping="Wrap" />
+                <CheckBox Content="Only show profiles for the selected output (plus 'any output' ones)" IsChecked="{Binding OnlyThisOutputProfiles, Mode=TwoWay}" />
+                <WrapPanel Margin="0,8,0,0">
+                    <Button Content="Apply" Style="{StaticResource AccentButton}" Command="{Binding ApplyProfileCommand}" Margin="0,0,8,6"
+                            ToolTip="Applies every stored setting. A profile made for another output asks whether to switch to it or apply it to the current output." />
+                    <Button Content="Save (overwrite)" Command="{Binding SaveProfileCommand}" Margin="0,0,8,6"
+                            ToolTip="Overwrite the selected profile with the current settings and output" />
+                    <Button Content="Delete" Command="{Binding DeleteProfileCommand}" Margin="0,0,8,6" />
+                </WrapPanel>
+                <Grid Margin="0,4,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox Text="{Binding NewProfileName, UpdateSourceTrigger=PropertyChanged}" ToolTip="Name for a new profile" />
+                    <Button Grid.Column="1" Content="Save as new profile" Margin="8,0,0,0" Command="{Binding SaveAsNewProfileCommand}" />
+                </Grid>
+                <WrapPanel Margin="0,10,0,0">
+                    <Button Content="Import..." Command="{Binding ImportProfilesCommand}" Margin="0,0,8,6"
+                            ToolTip="Reads LegacyAVR profile files, and presets / device profiles exported by older versions" />
+                    <Button Content="Export..." Command="{Binding ExportProfilesCommand}" Margin="0,0,8,6"
+                            ToolTip="Exports the selected profile, or all profiles when none is selected" />
+                    <Button Content="Restore defaults" Command="{Binding RestoreDefaultProfilesCommand}" Margin="0,0,8,6"
+                            ToolTip="Bring back the five starting profiles (your own profiles are kept)" />
+                </WrapPanel>
+                <CheckBox Content="Apply the last used profile when LegacyAVR starts" IsChecked="{Binding ApplyLastProfileAtStartup, Mode=TwoWay}"
+                          Margin="0,4,0,0" ToolTip="Only settings that differ are sent. If the profile's output is not connected nothing is applied and you are told why." />
+                <TextBlock Text="{Binding ProfileStatus}" Foreground="{StaticResource Accent}" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap" />
+                <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                           Text="A profile stores everything: output device, format, bitrate, mode, margin, stereo handling, upmix sliders, subwoofer, LFE crossover / level / generation, game mode, bass, Night Mode, every speaker trim and mute, the master level and the custom EQ. The five starting profiles store only format and processing, so they work on any output." />
+            </StackPanel>
+        </DataTemplate>
+        <!-- ============================================================
+             Settings guide: live controls shown inside each entry (v1.2.0).
+             Each template switches its DataContext to the MainViewModel, so the
+             control is the real setting, not a copy.
+             ============================================================ -->
+        <DataTemplate x:Key="HelpCtl.InputDevice">
+            <ComboBox DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                      ItemsSource="{Binding InputDevices}" SelectedItem="{Binding SelectedInputDevice, Mode=TwoWay}" DisplayMemberPath="Display" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.OutputDevice">
+            <ContentControl Content="{Binding}" ContentTemplate="{DynamicResource HelpCtl.DefaultOutput}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Format">
+            <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <ComboBox ItemsSource="{Binding CodecOptions}" SelectedItem="{Binding SelectedCodec, Mode=TwoWay}"
+                          ItemTemplate="{StaticResource CodecItem}" />
+                <TextBlock Text="{Binding FormatSupportText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Bitrate">
+            <ComboBox DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                      ItemsSource="{Binding BitrateOptions}" SelectedItem="{Binding SelectedBitrate, Mode=TwoWay}" IsEnabled="{Binding IsBitrateEnabled}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.OutputMode">
+            <ComboBox DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                      ItemsSource="{Binding OutputModeOptions}" SelectedItem="{Binding SelectedOutputMode, Mode=TwoWay}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Buffer">
+            <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <ComboBox ItemsSource="{Binding BufferOptions}" SelectedItem="{Binding SelectedBufferOption, Mode=TwoWay}" />
+                <TextBlock Text="{Binding MarginText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Effective">
+            <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <StackPanel Orientation="Horizontal">
+                    <Border Background="{Binding EffectiveBrush}" CornerRadius="4" Padding="6,1" Margin="0,0,10,0">
+                        <TextBlock Text="{Binding EffectiveStatusText}" FontSize="10" FontWeight="Bold" Foreground="#0F1115" />
+                    </Border>
+                    <TextBlock Text="{Binding OutputFormat}" FontWeight="SemiBold" />
+                </StackPanel>
+                <TextBlock Text="{Binding RequestedText, StringFormat='Requested: {0}'}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" />
+                <TextBlock Text="{Binding EffectiveReason}" FontSize="11" TextWrapping="Wrap" Foreground="{Binding EffectiveBrush}" />
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.StereoMode">
+            <ComboBox DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                      ItemsSource="{Binding UpmixOptions}" SelectedItem="{Binding SelectedUpmix, Mode=TwoWay}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.StereoAs20">
+            <CheckBox DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                      Content="Encode stereo as 2.0" IsChecked="{Binding StereoAs20, Mode=TwoWay}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.PcmStatus">
+            <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <ComboBox ItemsSource="{Binding UpmixOptions}" SelectedItem="{Binding SelectedUpmix, Mode=TwoWay}" />
+                <TextBlock Text="{Binding PcmSwitchText}" Foreground="{StaticResource Accent}" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Centre">
+            <Grid DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="64" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Slider Minimum="0" Maximum="1" Value="{Binding CentreLevel, Mode=TwoWay}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding CentreLevel, Converter={StaticResource Percent}}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="centre" />
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.CentreFloor">
+            <Grid DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="64" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Slider Minimum="0" Maximum="1" Value="{Binding CentreFloor, Mode=TwoWay}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding CentreFloor, Converter={StaticResource Percent}}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="centreFloor" />
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Dialog">
+            <Grid DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="64" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Slider Minimum="0" Maximum="1" Value="{Binding DialogBoost, Mode=TwoWay}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding DialogBoost, Converter={StaticResource Percent}}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="dialog" />
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Surround">
+            <Grid DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="64" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Slider Minimum="0" Maximum="1" Value="{Binding SurroundLevel, Mode=TwoWay}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding SurroundLevel, Converter={StaticResource Percent}}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="surround" />
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Delay">
+            <Grid DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="64" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Slider Minimum="0" Maximum="25" Value="{Binding SurroundDelayMs, Mode=TwoWay}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding SurroundDelayMs, StringFormat={}{0:0} ms}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="delay" />
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.LfeXover">
+            <Grid DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="64" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Slider Minimum="40" Maximum="200" Value="{Binding LfeCrossoverHz, Mode=TwoWay}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding LfeCrossoverHz, StringFormat={}{0:0} Hz}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="lfeXover" />
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.LfeLevel">
+            <Grid DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="64" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Slider Minimum="-30" Maximum="6" Value="{Binding LfeLevelDb, Mode=TwoWay}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding LfeLevelDb, StringFormat={}{0:0.0} dB}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="lfeLevel" />
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.LfeGen">
+            <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <ComboBox ItemsSource="{Binding LfeGenOptions}" SelectedItem="{Binding SelectedLfeGen, Mode=TwoWay}" IsEnabled="{Binding IsGeneralLfeGenEnabled}" />
+                <TextBlock Text="{Binding LfeOverrideText}" Foreground="{StaticResource Accent}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding LfeStatusText, StringFormat='LFE now: {0}'}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.LfeReset">
+            <Grid DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="64" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Slider Minimum="{Binding LfeResetMin}" Maximum="{Binding LfeResetMax}" SmallChange="1" LargeChange="10" TickFrequency="1"
+                        IsSnapToTickEnabled="True" Value="{Binding LfeResetSeconds, Mode=TwoWay}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding LfeResetText}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="lfeReset" />
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.GameLfe">
+            <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <CheckBox Content="LFE generation while gaming" IsChecked="{Binding GameLfeGen, Mode=TwoWay}" />
+                <TextBlock Text="{Binding GameStatusText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.LfeStatus">
+            <TextBlock DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                       Text="{Binding LfeStatusText}" Foreground="{Binding LfeStatusBrush}" FontWeight="SemiBold" TextWrapping="Wrap" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Profiles">
+            <ContentControl Content="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                            ContentTemplate="{StaticResource ProfilesPanel}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.CustomEq">
+            <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <CheckBox Content="Custom EQ (all channels)" IsChecked="{Binding EqEnabled, Mode=TwoWay}" />
+                <TextBlock Text="{Binding EqStatusText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,6" TextWrapping="Wrap" />
+                <ItemsControl ItemsSource="{Binding EqChannels}">
+                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Content="{Binding Name}" Style="{StaticResource SmallButton}" Margin="0,0,6,6" ToolTip="{Binding Summary}"
+                                    Command="{Binding DataContext.OpenEqCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    CommandParameter="{Binding Index}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.DefaultOutput">
+            <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                    <ComboBox ItemsSource="{Binding OutputDevices}" SelectedItem="{Binding SelectedOutputDevice, Mode=TwoWay}" DisplayMemberPath="Display" />
+                    <Button Grid.Column="1" Content="Default" Margin="8,0,0,0" Command="{Binding SetDefaultOutputCommand}"
+                            Visibility="{Binding ShowDefaultOutputButton, Converter={StaticResource BoolToVis}}" />
+                </Grid>
+                <TextBlock Text="{Binding DefaultOutputText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.EngineApp">
+            <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <CheckBox Content="Start LegacyAVR with Windows (in the tray)" IsChecked="{Binding StartWithWindows, Mode=TwoWay}" />
+                <CheckBox Content="Stop the engine when exiting from the tray" IsChecked="{Binding StopEngineOnExit, Mode=TwoWay}" />
+                <CheckBox Content="Apply the last used profile when LegacyAVR starts" IsChecked="{Binding ApplyLastProfileAtStartup, Mode=TwoWay}" />
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Streaming">
+            <Button DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}" HorizontalAlignment="Left"
+                    Content="Open the Edge add-on page (third-party)" Command="{Binding OpenStreamingExtensionCommand}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Gaming">
+            <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <ComboBox ItemsSource="{Binding GamingOptions}" SelectedItem="{Binding SelectedGaming, Mode=TwoWay}" />
+                <TextBlock Text="{Binding GameStatusText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Bass">
+            <Grid DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="64" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Slider Minimum="-12" Maximum="12" SmallChange="0.5" LargeChange="3" Value="{Binding BassDb, Mode=TwoWay}" VerticalAlignment="Center"
+                        IsEnabled="{Binding IsBassEnabled}" ToolTip="{Binding BassDisabledText}" />
+                <TextBlock Grid.Column="1" Text="{Binding BassText}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="bass" />
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.DedicatedSub">
+            <CheckBox DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                      Content="{Binding SubToggleText}" IsChecked="{Binding DedicatedSub, Mode=TwoWay}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.MuteAll">
+            <ToggleButton DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                          Style="{StaticResource MuteToggle}" Width="80" HorizontalAlignment="Left" IsChecked="{Binding MuteAll, Mode=TwoWay}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Master">
+            <Grid DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="64" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Slider Minimum="-60" Maximum="12" SmallChange="0.5" LargeChange="3" Value="{Binding MasterDb, Mode=TwoWay}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding MasterText}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="master" />
+            </Grid>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.NightMode">
+            <CheckBox DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                      Content="Night Mode" IsChecked="{Binding NightMode, Mode=TwoWay}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.StatsMode">
+            <Border DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}" HorizontalAlignment="Left"
+                    Background="{StaticResource Surface}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" Padding="2">
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton Style="{StaticResource Segment}" GroupName="StatsHelp" Content="Avg" IsChecked="{Binding StatsAverage, Mode=TwoWay}" />
+                    <RadioButton Style="{StaticResource Segment}" GroupName="StatsHelp" Content="Live" IsChecked="{Binding StatsLive, Mode=TwoWay}" />
+                    <RadioButton Style="{StaticResource Segment}" GroupName="StatsHelp" Content="Off" IsChecked="{Binding StatsOff, Mode=TwoWay}" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Latency">
+            <TextBlock DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                       Text="{Binding LatencyBreakdown}" Style="{StaticResource Mono}" Foreground="{StaticResource Text}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Processing">
+            <TextBlock DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                       Text="{Binding ProcessingText}" Foreground="{StaticResource Accent}" FontWeight="SemiBold" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.FreqRange">
+            <TextBlock DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                       Text="{Binding FreqRangeText}" Style="{StaticResource Mono}" Foreground="{StaticResource Text}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.OutputMeters">
+            <ItemsControl DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                          ItemsSource="{Binding OutputMeters}" ItemTemplate="{StaticResource MeterCell}" MaxWidth="520" HorizontalAlignment="Left">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+            </ItemsControl>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.AudioPipeline">
+            <Button DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}" HorizontalAlignment="Left"
+                    Content="{Binding AudioButtonText}" Command="{Binding ToggleAudioCommand}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.RestartEngine">
+            <Button DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}" HorizontalAlignment="Left"
+                    Content="Restart engine" Command="{Binding RestartEngineCommand}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Shutdown">
+            <Button DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}" HorizontalAlignment="Left"
+                    Content="Shut down engine" Command="{Binding ShutdownEngineCommand}" IsEnabled="{Binding CanShutdownEngine}" />
+        </DataTemplate>
+
+        <!-- One Settings Guide entry -->
+        <DataTemplate x:Key="HelpCard" DataType="{x:Type vm:HelpEntry}">
+            <Border Style="{StaticResource Card}" Margin="0,0,0,12">
+                <StackPanel>
+                    <TextBlock Text="{Binding Category}" Style="{StaticResource Caption}" />
+                    <TextBlock Text="{Binding Title}" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,8" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding WhatItDoes}" TextWrapping="Wrap" Margin="0,0,0,8" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="TRADE-OFFS" Style="{StaticResource Caption}" Margin="0,2,0,6" />
+                        <TextBlock Grid.Column="1" Text="{Binding Tradeoffs}" Style="{StaticResource Dim}" Margin="0,0,0,6" />
+                        <TextBlock Grid.Row="1" Text="START WITH" Style="{StaticResource Caption}" Foreground="{StaticResource Good}" Margin="0,2,0,0" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding StartingPoint}" TextWrapping="Wrap" />
+                        <!-- v1.2.0: the actual control, live -->
+                        <TextBlock Grid.Row="2" Text="SETTING" Style="{StaticResource Caption}" Foreground="{StaticResource Accent}" Margin="0,14,0,0"
+                                   Visibility="{Binding HasControl, Converter={StaticResource BoolToVis}}" />
+                        <Border Grid.Row="2" Grid.Column="1" Background="{StaticResource Surface2}" CornerRadius="6" Padding="10,8" Margin="0,10,0,0"
+                                MaxWidth="620" HorizontalAlignment="Left" MinWidth="320"
+                                Visibility="{Binding HasControl, Converter={StaticResource BoolToVis}}">
+                            <ContentControl Content="{Binding}" ContentTemplateSelector="{StaticResource HelpCtlSelector}" />
+                        </Border>
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid Margin="20,14,20,12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ================================================================ stopped bar (v1.2.0)
+             v1.4.0: no button here any more - the header's "Start audio pipeline" button (and
+             Engine Settings) start it again. -->
+        <Border Background="{StaticResource Danger}" Margin="-20,-14,-20,12" Padding="20,8"
+                Visibility="{Binding IsAudioStopped, Converter={StaticResource BoolToVis}}">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="AUDIO PIPELINE STOPPED" FontWeight="Bold" Foreground="White" Margin="0,0,12,0" />
+                <TextBlock Text="Nothing is being sent to your AVR / TV. The engine is still running and the HDMI/optical output is released. Use Start audio pipeline (top right) to resume."
+                           Foreground="White" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+        </Border>
+        <!-- ================================================================ header -->
+        <Grid Grid.Row="1" Margin="0,0,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Image Source="{Binding Icon, RelativeSource={RelativeSource AncestorType=Window}}" Width="30" Height="30" Margin="0,0,12,0" />
+                <StackPanel>
+                    <TextBlock Text="LegacyAVR" FontSize="20" FontWeight="Bold" />
+                    <TextBlock Text="Dolby Digital Live / DTS Interactive encoder" Style="{StaticResource Dim}" FontSize="11" />
+                </StackPanel>
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                <Border Background="{StaticResource Surface}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="14"
+                        Padding="12,5" Margin="0,0,12,0">
+                    <StackPanel Orientation="Horizontal">
+                        <Ellipse Width="9" Height="9" Fill="{Binding StatusBrush}" Margin="0,0,8,0" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding EngineStateText}" FontWeight="SemiBold" />
+                        <TextBlock Text="  service" Style="{StaticResource Dim}"
+                                   Visibility="{Binding IsServiceMode, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- CPU / latency with Avg / Live / Off selector; the latency tooltip lists every stage -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0"
+                            Visibility="{Binding ShowStats, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="CPU " Style="{StaticResource Dim}" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding CpuText}" FontWeight="SemiBold" Margin="0,0,12,0" MinWidth="42" VerticalAlignment="Center" />
+                    <TextBlock Text="Latency " Style="{StaticResource Dim}" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding LatencyText}" FontWeight="SemiBold" MinWidth="44" VerticalAlignment="Center">
+                        <TextBlock.ToolTip>
+                            <TextBlock Text="{Binding LatencyBreakdown}" FontFamily="{StaticResource MonoFont}" />
+                        </TextBlock.ToolTip>
+                    </TextBlock>
+                </StackPanel>
+                <Border Background="{StaticResource Surface}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12"
+                        Padding="2" Margin="0,0,14,0" VerticalAlignment="Center"
+                        ToolTip="CPU / latency display: 10-second average, live value, or hidden">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton Style="{StaticResource Segment}" GroupName="Stats" Content="Avg" IsChecked="{Binding StatsAverage, Mode=TwoWay}" />
+                        <RadioButton Style="{StaticResource Segment}" GroupName="Stats" Content="Live" IsChecked="{Binding StatsLive, Mode=TwoWay}" />
+                        <RadioButton Style="{StaticResource Segment}" GroupName="Stats" Content="Off" IsChecked="{Binding StatsOff, Mode=TwoWay}" />
+                    </StackPanel>
+                </Border>
+
+                <ToggleButton Style="{StaticResource MuteToggle}" Width="80" IsChecked="{Binding MuteAll, Mode=TwoWay}"
+                              ToolTip="Mute all speakers" Margin="0,0,8,0"
+                              Visibility="{Binding IsEngineUp, Converter={StaticResource BoolToVis}}" />
+                <Button Content="{Binding AudioButtonText}" Command="{Binding ToggleAudioCommand}" Margin="0,0,8,0"
+                        Visibility="{Binding IsEngineUp, Converter={StaticResource BoolToVis}}"
+                        ToolTip="Stop audio pipeline releases the HDMI/optical output but keeps the engine running. Start audio pipeline resumes." />
+                <Button Content="Restart engine" Command="{Binding RestartEngineCommand}"
+                        Visibility="{Binding IsEngineUp, Converter={StaticResource BoolToVis}}"
+                        ToolTip="Re-open the input and output devices with the current settings" />
+                <Button Content="Start engine" Style="{StaticResource AccentButton}" Command="{Binding StartEngineCommand}"
+                        Visibility="{Binding IsEngineDown, Converter={StaticResource BoolToVis}}"
+                        ToolTip="Start the AVREngine process" />
+            </StackPanel>
+        </Grid>
+
+        <!-- ================================================================ banners -->
+        <StackPanel Grid.Row="2">
+            <Border Background="#33EF4444" BorderBrush="{StaticResource Danger}" BorderThickness="1" CornerRadius="8" Padding="12,8"
+                    Margin="0,0,0,10" Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap" />
+            </Border>
+            <Border Background="#33F59E0B" BorderBrush="{StaticResource Warn}" BorderThickness="1" CornerRadius="8" Padding="12,8"
+                    Margin="0,0,0,10" Visibility="{Binding IsBitstreamBlocked, Converter={StaticResource BoolToVis}}">
+                <TextBlock TextWrapping="Wrap"
+                           Text="Pre-encoded Dolby/DTS input detected, but the output is in Shared (PCM) mode, so it cannot be passed through. Switch Output Mode to WASAPI Exclusive." />
+            </Border>
+        </StackPanel>
+
+        <!-- ================================================================ live stream inspector
+             Both cards use the same rows (caption, headline, device line, meters) so the
+             input and output visualisers line up. -->
+        <Grid Grid.Row="3" Margin="0,0,0,16" MaxWidth="1600">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="48" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <Grid Height="20">
+                        <TextBlock Text="INPUT  (what Windows / the game is sending)" Style="{StaticResource Caption}" VerticalAlignment="Center" />
+                    </Grid>
+                    <TextBlock Text="{Binding InputFormat}" Style="{StaticResource Headline}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding InputDetail}" Style="{StaticResource Dim}" FontSize="11" Margin="0,2,0,10" TextTrimming="CharacterEllipsis" />
+                    <ItemsControl ItemsSource="{Binding InputMeters}" ItemTemplate="{StaticResource MeterCell}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Rows="1" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding FreqRangeText}" Style="{StaticResource Mono}" FontSize="11" Margin="0,8,0,0"
+                               ToolTip="Lowest and highest frequency in the input, averaged over the last ~7 seconds (bands within 50 dB of the strongest one)" />
+                </StackPanel>
+            </Border>
+            <Path Grid.Column="1" Data="M 0 0 L 14 10 L 0 20" Stroke="{StaticResource Accent}" StrokeThickness="2.5"
+                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <Border Grid.Column="2" Style="{StaticResource Card}">
+                <StackPanel>
+                    <Grid Height="20">
+                        <TextBlock Text="OUTPUT  (what the AVR / TV receives)" Style="{StaticResource Caption}" VerticalAlignment="Center" />
+                        <Border HorizontalAlignment="Right" VerticalAlignment="Center" Background="{Binding EffectiveBrush}" CornerRadius="4" Padding="6,1"
+                                ToolTip="Requested format vs. what LegacyAVR actually opened">
+                            <TextBlock Text="{Binding EffectiveStatusText}" FontSize="10" FontWeight="Bold" Foreground="#0F1115" />
+                        </Border>
+                    </Grid>
+                    <TextBlock Text="{Binding OutputFormat}" Style="{StaticResource Headline}" Foreground="{StaticResource Accent}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding OutputDetail}" Style="{StaticResource Dim}" FontSize="11" Margin="0,2,0,10" TextTrimming="CharacterEllipsis" />
+
+                    <!-- v1.2.0 output visualiser: the channels that actually leave the engine -->
+                    <Grid>
+                        <ItemsControl ItemsSource="{Binding OutputMeters}" ItemTemplate="{StaticResource MeterCell}"
+                                      Visibility="{Binding OutputIsPassthrough, Converter={StaticResource BoolToVisInv}}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Rows="1" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                        <TextBlock Text="Bit-exact passthrough - the bitstream is forwarded untouched, so its levels are not decoded."
+                                   Style="{StaticResource Dim}" FontSize="11" TextWrapping="Wrap"
+                                   Visibility="{Binding OutputIsPassthrough, Converter={StaticResource BoolToVis}}" />
+                    </Grid>
+
+                    <!-- live processing state (from the DSP, not inferred from settings) -->
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
+                        <TextBlock Text="PROCESSING  " Style="{StaticResource Caption}" Margin="0" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding ProcessingText}" FontWeight="SemiBold" Foreground="{StaticResource Accent}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,-4,0,8">
+                        <TextBlock Text="LFE  " Style="{StaticResource Caption}" Margin="0" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding LfeStatusText}" Foreground="{Binding LfeStatusBrush}" FontWeight="SemiBold" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding LfeStatusText}" />
+                    </StackPanel>
+
+                    <!-- Effective output: requested vs. opened + reason -->
+                    <Border Background="{StaticResource Surface2}" CornerRadius="6" Padding="10,6" Margin="0,0,0,8">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Requested: " Style="{StaticResource Dim}" FontSize="11" />
+                                <TextBlock Text="{Binding RequestedText}" FontSize="11" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding EffectiveReason}" FontSize="11" TextWrapping="Wrap" Foreground="{Binding EffectiveBrush}"
+                                       Margin="0,3,0,0" Visibility="{Binding HasEffectiveReason, Converter={StaticResource BoolToVis}}" />
+                            <TextBlock Text="{Binding PcmSwitchText}" FontSize="11" TextWrapping="Wrap" Style="{StaticResource Dim}"
+                                       Margin="0,3,0,0" Visibility="{Binding HasPcmSwitchText, Converter={StaticResource BoolToVis}}" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="{Binding AnalysisText}" Style="{StaticResource Mono}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- ================================================================ tabs -->
+        <TabControl Grid.Row="4">
+
+            <!-- Mixer. v1.4.0: strips keep a sensible size when the window is enlarged; each strip
+                 has an EQ button and a trim reset. -->
+            <TabItem Header="Mixer">
+                <Grid MaxWidth="1240" MaxHeight="660" VerticalAlignment="Top">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ItemsControl ItemsSource="{Binding Channels}" ItemTemplate="{StaticResource ChannelStrip}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <UniformGrid Rows="1" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+                    <Border Grid.Column="1" Style="{StaticResource Card}" Width="150" Padding="12" MaxHeight="600" VerticalAlignment="Top">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="MASTER" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" />
+                                <TextBlock Text="all speakers" Style="{StaticResource Dim}" FontSize="11" HorizontalAlignment="Center" Margin="0,0,0,10" />
+                            </StackPanel>
+                            <Slider Grid.Row="1" Orientation="Vertical" Minimum="-60" Maximum="12" SmallChange="0.5" LargeChange="3"
+                                    Value="{Binding MasterDb, Mode=TwoWay}" HorizontalAlignment="Center" MinHeight="200" />
+                            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,8">
+                                <TextBlock Text="{Binding MasterText}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <Button Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="master"
+                                        ToolTip="Reset Master to 0 dB (asks first)" />
+                            </StackPanel>
+                            <CheckBox Grid.Row="3" Content="Custom EQ" IsChecked="{Binding EqEnabled, Mode=TwoWay}" Margin="0,0,0,8"
+                                      HorizontalAlignment="Center" ToolTip="{Binding EqStatusText}" />
+                            <ToggleButton Grid.Row="4" Style="{StaticResource MuteToggle}" IsChecked="{Binding MuteAll, Mode=TwoWay}" />
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- Output: devices, profiles, encoder -->
+            <TabItem Header="Output &amp; Profiles">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Grid MaxWidth="1500">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="DEVICES" Style="{StaticResource Caption}" />
+                                    <TextBlock Text="Input - the 7.1 virtual cable (render endpoint = loopback capture)" Style="{StaticResource Dim}" Margin="0,4,0,4" />
+                                    <ComboBox ItemsSource="{Binding InputDevices}" SelectedItem="{Binding SelectedInputDevice, Mode=TwoWay}" DisplayMemberPath="Display" />
+                                    <TextBlock Text="Output - HDMI ARC / S/PDIF device connected to the AVR / TV" Style="{StaticResource Dim}" Margin="0,12,0,4" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ComboBox ItemsSource="{Binding OutputDevices}" SelectedItem="{Binding SelectedOutputDevice, Mode=TwoWay}" DisplayMemberPath="Display" />
+                                        <Button Grid.Column="1" Content="Default" Margin="8,0,0,0" Command="{Binding SetDefaultOutputCommand}"
+                                                Visibility="{Binding ShowDefaultOutputButton, Converter={StaticResource BoolToVis}}"
+                                                ToolTip="Make this LegacyAVR's default output: it is selected every time LegacyAVR starts. Windows' own default device is not changed." />
+                                    </Grid>
+                                    <TextBlock Text="{Binding OutputNotice}" Foreground="{StaticResource Warn}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                                               Visibility="{Binding HasOutputNotice, Converter={StaticResource BoolToVis}}" />
+                                    <TextBlock Text="{Binding DefaultOutputText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />
+                                    <WrapPanel Margin="0,12,0,0">
+                                        <Button Content="Refresh devices" Command="{Binding RefreshDevicesCommand}" Margin="0,0,8,6" />
+                                        <Button Content="Windows Sound settings" Command="{Binding OpenSoundSettingsCommand}" Margin="0,0,8,6" />
+                                        <Button Content="Classic Sound panel" Command="{Binding OpenClassicSoundCommand}" Margin="0,0,8,6" />
+                                    </WrapPanel>
+                                    <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                                               Text="[DD] [DTS] [DD+] show which bitstream formats the device accepts in exclusive mode; [PCM only] means it accepts none. (Default) marks LegacyAVR's default output." />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="ENCODER" Style="{StaticResource Caption}" />
+                                    <TextBlock Text="Format" Style="{StaticResource Dim}" Margin="0,4,0,4" />
+                                    <ComboBox ItemsSource="{Binding CodecOptions}" SelectedItem="{Binding SelectedCodec, Mode=TwoWay}"
+                                              ItemTemplate="{StaticResource CodecItem}" />
+                                    <TextBlock Text="{Binding FormatSupportText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />
+                                    <TextBlock Text="The selected format is not supported by this output: LegacyAVR will fall back to PCM. Pick a format without the mark."
+                                               Foreground="{StaticResource Warn}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                                               Visibility="{Binding IsSelectedFormatUnsupported, Converter={StaticResource BoolToVis}}" />
+                                    <TextBlock Text="Bitrate" Style="{StaticResource Dim}" Margin="0,12,0,4" />
+                                    <ComboBox ItemsSource="{Binding BitrateOptions}" SelectedItem="{Binding SelectedBitrate, Mode=TwoWay}"
+                                              IsEnabled="{Binding IsBitrateEnabled}" />
+                                    <TextBlock Text="Output mode" Style="{StaticResource Dim}" Margin="0,12,0,4" />
+                                    <ComboBox ItemsSource="{Binding OutputModeOptions}" SelectedItem="{Binding SelectedOutputMode, Mode=TwoWay}" />
+                                    <TextBlock Text="Output safety margin (on top of what your devices need)" Style="{StaticResource Dim}" Margin="0,12,0,4" />
+                                    <ComboBox ItemsSource="{Binding BufferOptions}" SelectedItem="{Binding SelectedBufferOption, Mode=TwoWay}" />
+                                    <TextBlock Text="{Binding MarginText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />
+                                    <TextBlock Text="LATENCY BY STAGE" Style="{StaticResource Caption}" Margin="0,12,0,4" />
+                                    <TextBlock Text="{Binding LatencyBreakdown}" Style="{StaticResource Mono}" FontSize="11" Foreground="{StaticResource Text}" />
+                                    <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap"
+                                               Text="Changing format, bitrate, mode, margin or the subwoofer switch re-opens the output; the AVR re-syncs for about a second. Measure it yourself: scripts\build.ps1 -Latency." />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2">
+                            <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                                <ContentControl Content="{Binding}" ContentTemplate="{StaticResource ProfilesPanel}" />
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Upmixing & Bass (v1.4.0: was the right half of "Output & Processing"; "Stereo sources" is now "Upmixing") -->
+            <TabItem Header="Upmixing &amp; Bass">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <Grid MaxWidth="1500">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.ColumnSpan="3" Background="{StaticResource Surface}" BorderBrush="{StaticResource Line}" BorderThickness="1"
+                                CornerRadius="8" Padding="14,10" Margin="0,0,0,16">
+                            <TextBlock TextWrapping="Wrap"
+                                       Text="Upmixing only ever applies to stereo sources. Real multichannel audio (5.1, 7.1, and 5.0 / 7.0) is never upmixed: it is passed to the encoder as it is (7.1 is folded down to 5.1). LFE generation, Bass and Custom EQ work on every PCM source; a pre-encoded Dolby / DTS bitstream is always passed through untouched." />
+                        </Border>
+
+                        <StackPanel Grid.Row="1">
+                            <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="UPMIXING  (stereo sources only)" Style="{StaticResource Caption}" />
+                                    <ComboBox ItemsSource="{Binding UpmixOptions}" SelectedItem="{Binding SelectedUpmix, Mode=TwoWay}" Margin="0,4,0,8" />
+                                    <CheckBox Content="Encode stereo as 2.0 (lets the AVR apply its own upmixer)"
+                                              IsChecked="{Binding StereoAs20, Mode=TwoWay}"
+                                              Visibility="{Binding IsKeepStereoMode, Converter={StaticResource BoolToVis}}" />
+                                    <TextBlock Text="{Binding PcmSwitchText}" Foreground="{StaticResource Accent}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,4"
+                                               Visibility="{Binding HasPcmSwitchText, Converter={StaticResource BoolToVis}}" />
+                                    <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                                               Text="Upmix sliders keep their values in every mode, so switching to Lossless PCM and back restores your upmix exactly. The first five only affect the two Dynamic upmix modes." />
+                                    <TextBlock Text="No subwoofer: the Dynamic modes are 3.0 / 5.0 (no LFE channel is created)." Style="{StaticResource Dim}" FontSize="11"
+                                               Margin="0,4,0,0" TextWrapping="Wrap" Visibility="{Binding IsNoSub, Converter={StaticResource BoolToVis}}" />
+                                    <Grid Margin="0,10,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="160" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="64" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="34" /><RowDefinition Height="34" /><RowDefinition Height="34" />
+                                            <RowDefinition Height="34" /><RowDefinition Height="34" /><RowDefinition Height="Auto" />
+                                            <RowDefinition Height="34" /><RowDefinition Height="34" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Text="Centre steering" Style="{StaticResource Dim}" VerticalAlignment="Center" />
+                                        <Slider Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding CentreLevel, Mode=TwoWay}" VerticalAlignment="Center"
+                                                IsEnabled="{Binding IsUpmixMode}" />
+                                        <TextBlock Grid.Column="2" Text="{Binding CentreLevel, Converter={StaticResource Percent}}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        <Button Grid.Column="3" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="centre" />
+
+                                        <TextBlock Grid.Row="1" Text="Centre floor (anti-pumping)" Style="{StaticResource Dim}" VerticalAlignment="Center" />
+                                        <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding CentreFloor, Mode=TwoWay}" VerticalAlignment="Center"
+                                                IsEnabled="{Binding IsUpmixMode}"
+                                                ToolTip="Minimum centre level that is always present, so the centre speaker does not come and go with the music" />
+                                        <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding CentreFloor, Converter={StaticResource Percent}}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        <Button Grid.Row="1" Grid.Column="3" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="centreFloor" />
+
+                                        <TextBlock Grid.Row="2" Text="Dialogue boost" Style="{StaticResource Dim}" VerticalAlignment="Center" />
+                                        <Slider Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding DialogBoost, Mode=TwoWay}" VerticalAlignment="Center"
+                                                IsEnabled="{Binding IsUpmixMode}" />
+                                        <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding DialogBoost, Converter={StaticResource Percent}}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        <Button Grid.Row="2" Grid.Column="3" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="dialog" />
+
+                                        <TextBlock Grid.Row="3" Text="Surround level" Style="{StaticResource Dim}" VerticalAlignment="Center" />
+                                        <Slider Grid.Row="3" Grid.Column="1" Minimum="0" Maximum="1" Value="{Binding SurroundLevel, Mode=TwoWay}" VerticalAlignment="Center"
+                                                IsEnabled="{Binding IsUpmixMode}" />
+                                        <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding SurroundLevel, Converter={StaticResource Percent}}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        <Button Grid.Row="3" Grid.Column="3" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="surround" />
+
+                                        <TextBlock Grid.Row="4" Text="Surround delay" Style="{StaticResource Dim}" VerticalAlignment="Center" />
+                                        <Slider Grid.Row="4" Grid.Column="1" Minimum="0" Maximum="25" Value="{Binding SurroundDelayMs, Mode=TwoWay}" VerticalAlignment="Center"
+                                                IsEnabled="{Binding IsUpmixMode}" />
+                                        <TextBlock Grid.Row="4" Grid.Column="2" Text="{Binding SurroundDelayMs, StringFormat={}{0:0} ms}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        <Button Grid.Row="4" Grid.Column="3" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="delay" />
+
+                                        <!-- LFE crossover / level are shared with LFE generation, so they stay enabled in every mode. -->
+                                        <TextBlock Grid.Row="5" Grid.ColumnSpan="4" Text="{Binding LfeControlsNote}" Style="{StaticResource Dim}" FontSize="11"
+                                                   Margin="0,6,0,2" TextWrapping="Wrap" />
+
+                                        <TextBlock Grid.Row="6" Text="LFE crossover" Style="{StaticResource Dim}" VerticalAlignment="Center" />
+                                        <Slider Grid.Row="6" Grid.Column="1" Minimum="40" Maximum="200" Value="{Binding LfeCrossoverHz, Mode=TwoWay}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Row="6" Grid.Column="2" Text="{Binding LfeCrossoverHz, StringFormat={}{0:0} Hz}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        <Button Grid.Row="6" Grid.Column="3" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="lfeXover" />
+
+                                        <TextBlock Grid.Row="7" Text="LFE level" Style="{StaticResource Dim}" VerticalAlignment="Center" />
+                                        <Slider Grid.Row="7" Grid.Column="1" Minimum="-30" Maximum="6" Value="{Binding LfeLevelDb, Mode=TwoWay}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Row="7" Grid.Column="2" Text="{Binding LfeLevelDb, StringFormat={}{0:0.0} dB}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        <Button Grid.Row="7" Grid.Column="3" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="lfeLevel" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="DYNAMICS" Style="{StaticResource Caption}" />
+                                    <CheckBox Content="Night Mode - dynamic range compression (quiet explosions, clear dialogue)"
+                                              IsChecked="{Binding NightMode, Mode=TwoWay}" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="1" Grid.Column="2">
+                            <!-- v1.3.0: bass / subwoofer, LFE generation and Game Mode are separate cards -->
+                            <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="BASS, SUBWOOFER &amp; CUSTOM EQ" Style="{StaticResource Caption}" />
+                                    <Grid Margin="0,4,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="160" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="64" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Bass (all channels)" Style="{StaticResource Dim}" VerticalAlignment="Center" />
+                                        <Slider Grid.Column="1" Minimum="-12" Maximum="12" SmallChange="0.5" LargeChange="3" Value="{Binding BassDb, Mode=TwoWay}"
+                                                VerticalAlignment="Center" IsEnabled="{Binding IsBassEnabled}"
+                                                ToolTip="Low shelf at 120 Hz on every channel, -12 to +12 dB. Unavailable while Custom EQ is on." />
+                                        <TextBlock Grid.Column="2" Text="{Binding BassText}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        <Button Grid.Column="3" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="bass"
+                                                IsEnabled="{Binding IsBassEnabled}" />
+                                    </Grid>
+                                    <TextBlock Text="{Binding BassDisabledText}" Foreground="{StaticResource Warn}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                                               Visibility="{Binding EqEnabled, Converter={StaticResource BoolToVis}}" />
+                                    <Grid Margin="0,10,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <CheckBox Content="Custom EQ (per-channel, replaces Bass)" IsChecked="{Binding EqEnabled, Mode=TwoWay}" VerticalAlignment="Center" />
+                                        <Button Grid.Column="1" Content="Edit EQ..." Style="{StaticResource SmallButton}" Command="{Binding OpenEqCommand}" CommandParameter="0"
+                                                ToolTip="Opens the EQ of the front left channel; switch channels inside the dialog, or use the EQ button of each mixer strip." />
+                                    </Grid>
+                                    <TextBlock Text="{Binding EqStatusText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                    <CheckBox Content="{Binding SubToggleText}" IsChecked="{Binding DedicatedSub, Mode=TwoWay}" Margin="0,12,0,4"
+                                              ToolTip="Same switch as at the bottom right. Off = no subwoofer: 5.0 output, LFE played by the front speakers." />
+                                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                        <TextBlock Text="LFE  " Style="{StaticResource Caption}" Margin="0" VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding LfeStatusText}" Foreground="{Binding LfeStatusBrush}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="LFE GENERATION  (sources without their own subwoofer channel)" Style="{StaticResource Caption}" />
+                                    <ComboBox ItemsSource="{Binding LfeGenOptions}" SelectedItem="{Binding SelectedLfeGen, Mode=TwoWay}" Margin="0,4,0,0"
+                                              IsEnabled="{Binding IsGeneralLfeGenEnabled}" />
+                                    <TextBlock Text="{Binding LfeOverrideText}" Foreground="{StaticResource Accent}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                    <Grid Margin="0,10,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="160" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="64" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Resume after silence" Style="{StaticResource Dim}" VerticalAlignment="Center" />
+                                        <Slider Grid.Column="1" Minimum="{Binding LfeResetMin}" Maximum="{Binding LfeResetMax}" SmallChange="1" LargeChange="10"
+                                                TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding LfeResetSeconds, Mode=TwoWay}"
+                                                VerticalAlignment="Center"
+                                                ToolTip="Once the source plays its own LFE, Auto generation stays off until every input channel has been silent this long (1 - 300 s, 10 s recommended)" />
+                                        <TextBlock Grid.Column="2" Text="{Binding LfeResetText}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                        <Button Grid.Column="3" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="lfeReset"
+                                                ToolTip="Reset to 10 s, the recommended value (asks first)" />
+                                    </Grid>
+                                    <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                                               Text="Auto stops for the rest of the film or game once the source uses its own LFE, so a 5.1 mix with a quiet LFE is never given a second one. It starts listening again after the silence time above (all channels below -80 dBFS). 10 s is recommended." />
+                                    <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                                               Text="No subwoofer: LFE generation moves the bass of the centre and surround speakers to the fronts instead, using the LFE crossover and LFE level from the Upmixing card."
+                                               Visibility="{Binding IsNoSub, Converter={StaticResource BoolToVis}}" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <TextBlock Text="GAME MODE  (no stereo upmix or output switching while gaming)" Style="{StaticResource Caption}" />
+                                    <ComboBox ItemsSource="{Binding GamingOptions}" SelectedItem="{Binding SelectedGaming, Mode=TwoWay}" Margin="0,4,0,0" />
+                                    <TextBlock Text="{Binding GameStatusText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,8" TextWrapping="Wrap" />
+                                    <CheckBox Content="LFE generation while gaming (overrides the LFE generation setting during games)"
+                                              IsChecked="{Binding GameLfeGen, Mode=TwoWay}" />
+                                    <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
+                                               Text="On: while a game is active, every source without its own LFE gets one (5.0 to 5.1, stereo to 2.1). Games that use their own LFE pause it, exactly like Auto." />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
+            </TabItem>
+            <!-- Diagnostics wizard -->
+            <TabItem Header="Diagnostics">
+                <Grid DataContext="{Binding Diagnostics}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="260" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="VALIDATION WIZARD" Style="{StaticResource Caption}" />
+                            <ListBox ItemsSource="{Binding Steps}" SelectedIndex="{Binding StepIndex, Mode=TwoWay}" Margin="0,6,0,0" />
+                            <TextBlock Text="No subwoofer: LFE tests play through the front speakers." Style="{StaticResource Dim}" FontSize="11"
+                                       Margin="0,10,0,0" TextWrapping="Wrap" Visibility="{Binding IsNoSub, Converter={StaticResource BoolToVis}}" />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource Card}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="280" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Margin="0,0,20,0">
+                                <TextBlock Text="{Binding CurrentStep.Title}" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <TextBlock Text="{Binding CurrentStep.Instructions}" Style="{StaticResource Dim}" Margin="0,0,0,12" />
+                                <TextBlock Text="EXPECTED RESULT" Style="{StaticResource Caption}" />
+                                <TextBlock Text="{Binding CurrentStep.ExpectedResult}" TextWrapping="Wrap" Margin="0,0,0,14" />
+
+                                <StackPanel Visibility="{Binding ShowSpeakerToggles, Converter={StaticResource BoolToVis}}" Margin="0,0,0,14">
+                                    <TextBlock Text="SPEAKERS" Style="{StaticResource Caption}" />
+                                    <ItemsControl ItemsSource="{Binding Speakers}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <ToggleButton Style="{StaticResource Chip}" Content="{Binding Label}" IsChecked="{Binding Enabled, Mode=TwoWay}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                    <Button Content="Back" Command="{Binding BackCommand}" Margin="0,0,8,0" />
+                                    <Button Content="Start test" Style="{StaticResource AccentButton}" Command="{Binding StartCommand}" Margin="0,0,8,0" />
+                                    <Button Content="Stop" Command="{Binding StopCommand}" Margin="0,0,8,0" />
+                                    <Button Content="Next" Command="{Binding NextCommand}" />
+                                </StackPanel>
+                                <Border Background="{StaticResource Surface2}" CornerRadius="8" Padding="14,10">
+                                    <TextBlock Text="{Binding LiveStatus}" FontSize="16" FontWeight="SemiBold" />
+                                </Border>
+                                <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,10,0,0"
+                                           Text="Tip: test signals are generated inside the engine, so they play even when nothing else is producing sound, and they go through the encoder exactly like game audio." />
+                            </StackPanel>
+
+                            <!-- Room diagram: highlights the speaker the engine is addressing -->
+                            <Border Grid.Column="1" Background="{StaticResource Bg}" CornerRadius="10" Padding="10"
+                                    DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid>
+                                        <Border Style="{StaticResource SpeakerBox}" HorizontalAlignment="Left" Tag="{Binding Channels[0].IsTestTarget}">
+                                            <TextBlock Text="FL" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" />
+                                        </Border>
+                                        <Border Style="{StaticResource SpeakerBox}" HorizontalAlignment="Center" Tag="{Binding Channels[2].IsTestTarget}">
+                                            <TextBlock Text="C" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" />
+                                        </Border>
+                                        <Border Style="{StaticResource SpeakerBox}" HorizontalAlignment="Right" Tag="{Binding Channels[1].IsTestTarget}">
+                                            <TextBlock Text="FR" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" />
+                                        </Border>
+                                    </Grid>
+                                    <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="0,20">
+                                        <Ellipse Width="28" Height="28" Stroke="{StaticResource TextDim}" StrokeThickness="2" />
+                                        <TextBlock Text="listener" Style="{StaticResource Dim}" FontSize="10" HorizontalAlignment="Center" />
+                                    </StackPanel>
+                                    <Grid Grid.Row="2">
+                                        <Border Style="{StaticResource SpeakerBox}" HorizontalAlignment="Left" Tag="{Binding Channels[4].IsTestTarget}">
+                                            <TextBlock Text="SL" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" />
+                                        </Border>
+                                        <Border Style="{StaticResource SpeakerBox}" HorizontalAlignment="Center" Tag="{Binding Channels[3].IsTestTarget}"
+                                                Visibility="{Binding DedicatedSub, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="LFE" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" />
+                                        </Border>
+                                        <TextBlock Text="no sub: LFE plays on FL + FR" Style="{StaticResource Dim}" FontSize="10" HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" Visibility="{Binding IsNoSub, Converter={StaticResource BoolToVis}}" />
+                                        <Border Style="{StaticResource SpeakerBox}" HorizontalAlignment="Right" Tag="{Binding Channels[5].IsTestTarget}">
+                                            <TextBlock Text="SR" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" />
+                                        </Border>
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- Settings guide (searchable help with the real controls inline) -->
+            <TabItem Header="Settings guide">
+                <Grid DataContext="{Binding Help}" MaxWidth="1200">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="240" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="Search every setting, format and diagnostic term, e.g. 'latency', 'underrun', 'centre', 'DD+', 'subwoofer'" />
+                        <ComboBox Grid.Column="2" ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory, Mode=TwoWay}" />
+                        <TextBlock Grid.Column="3" Text="{Binding ResultCountText}" Style="{StaticResource Dim}" VerticalAlignment="Center" Margin="12,0,0,0" />
+                    </Grid>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding Results}" ItemTemplate="{StaticResource HelpCard}" />
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
+
+            <!-- Setup guide -->
+            <TabItem Header="Setup guide">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel MaxWidth="1200">
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                                    <Button Content="Open Windows Sound settings" Style="{StaticResource AccentButton}"
+                                            Command="{Binding OpenSoundSettingsCommand}" Margin="0,0,8,0" />
+                                    <Button Content="Open classic Sound control panel" Command="{Binding OpenClassicSoundCommand}"
+                                            ToolTip="Playback devices, Configure (7.1), Properties and Advanced (exclusive mode, 48 kHz) are here" />
+                                </StackPanel>
+                                <TextBlock Text="ONE-TIME SETUP" Style="{StaticResource Caption}" />
+                                <TextBlock TextWrapping="Wrap" LineHeight="22" xml:space="preserve">1. Install VB-Audio VB-CABLE (or Hi-Fi Cable). Reboot if asked.
+2. Classic Sound control panel → Playback → "CABLE Input" → Configure → choose 7.1 Surround → Next through the wizard, ticking every speaker.
+3. CABLE Input → Properties → Advanced: 24-bit or 32-bit, 48000 Hz. Untick "Enable audio enhancements" and disable Spatial sound (Windows Sonic / Dolby Atmos for Headphones) on it.
+4. Set "CABLE Input" as the Default Device (games and apps now output 7.1 into the cable).
+5. Your HDMI / S/PDIF device → Properties → Advanced: tick both "Allow applications to take exclusive control" boxes. Check Supported Formats lists Dolby Digital (and DTS).
+6. In this app (Output &amp; Profiles): Input = CABLE Input, Output = your HDMI / S/PDIF device (press Default so it is chosen every time), then apply a profile (Dolby Digital 5.1 - 640 kbps is the safest start) and save your own with "Save as new profile".
+7. No subwoofer? Click "Dedicated subwoofer active" at the bottom right so it reads "inactive", and set the AVR's subwoofer to None.
+8. The AVR front panel should now show Dolby Digital (or DTS). Run the Diagnostics wizard to verify every speaker.</TextBlock>
+                                <TextBlock Text="GOOD TO KNOW" Style="{StaticResource Caption}" Margin="0,16,0,4" />
+                                <TextBlock Style="{StaticResource Dim}" LineHeight="20" TextWrapping="Wrap"
+                                           Text="• Exclusive mode only locks the HDMI/optical device. Discord, Spotify and system sounds keep working because they play into the cable, which LegacyAVR mixes and encodes.&#x0a;• Optical/coax S/PDIF can carry Dolby Digital and DTS but NOT Dolby Digital Plus; DD+ needs an HDMI ARC sink that explicitly supports it.&#x0a;• For pre-encoded passthrough (e.g. a player bitstreaming AC-3 into the cable), the cable must be at 48 kHz with Windows volume at 100% and no enhancements, so the bits arrive untouched.&#x0a;• Latency before the AVR is typically 70-85 ms with the automatic safety margin; about half of it is the 32 ms Dolby/DTS frame and Windows' own audio engine. Hover the Latency readout for the stages.&#x0a;• Every setting is explained, with its control, in the Settings guide tab." />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- v1.2.0: streaming services notice -->
+                        <Border Style="{StaticResource Card}" BorderBrush="{StaticResource Warn}">
+                            <StackPanel>
+                                <TextBlock Text="STREAMING SERVICES IN WINDOWS (NETFLIX, DISNEY+, PRIME VIDEO, CRUNCHYROLL)" Style="{StaticResource Caption}" Foreground="{StaticResource Warn}" />
+                                <TextBlock TextWrapping="Wrap" LineHeight="20" Margin="0,4,0,0"
+                                           Text="Netflix, Disney+, Prime Video and Crunchyroll often play only stereo (PCM 2.0) on Windows when you watch in a web browser or some of their apps, because of copy protection (DRM) and browser limits. What you get depends on the service, the browser or app, your hardware and your plan. If the INPUT meters show only FL and FR while a film plays, the service is sending stereo, and LegacyAVR has no surround channels to pass on." />
+                                <TextBlock Text="QUICK FIXES" Style="{StaticResource Caption}" Margin="0,12,0,4" />
+                                <TextBlock TextWrapping="Wrap" LineHeight="20"
+                                           Text="• Use the Dynamic 5.1 upmix for stereo sources (Upmixing &amp; Bass tab → Upmixing). An upmixer creates derived channels from the stereo mix: the centre from what left and right have in common, the surrounds from what differs. It sounds fuller, but it cannot recover the separate surround tracks that the service did not send." />
+                                <TextBlock TextWrapping="Wrap" LineHeight="20" Margin="0,6,0,0"
+                                           Text="• Optional, third-party: the '5.1 Surround for Netflix' add-on for Microsoft Edge is designed to request Netflix's 5.1 audio when you watch Netflix in Microsoft Edge. It applies only to Netflix in Edge (not to Disney+, Prime Video, other browsers or the apps). It is made by an independent developer - not by LegacyAVR, Netflix or Microsoft - and LegacyAVR does not endorse it or need it. Check its permissions and reviews before installing, and expect it to stop working if Netflix changes its player." />
+                                <TextBlock TextWrapping="Wrap" LineHeight="20" Margin="0,6,0,0" Style="{StaticResource Dim}"
+                                           Text="Why LegacyAVR does not switch settings for these services automatically: it receives the mixed audio of the virtual cable, which does not say which app or website produced it, and a browser tab's address is not visible to it. Guessing from window titles or process names would be wrong too often (a browser plays YouTube and Netflix alike), so LegacyAVR relies on what it can measure in the audio instead." />
+                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                    <Button Content="Open the add-on page (third-party)" Command="{Binding OpenStreamingExtensionCommand}"
+                                            ToolTip="{x:Static vm:MainViewModel.StreamingExtensionUrl}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <!-- v1.4.0: Engine Settings (was the "Application & Engine" card of the Output tab). Always the last tab. -->
+            <TabItem Header="Engine Settings">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel MaxWidth="900" HorizontalAlignment="Left">
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="APPLICATION &amp; ENGINE" Style="{StaticResource Caption}" />
+                                <CheckBox Content="Start LegacyAVR with Windows (in the tray)" IsChecked="{Binding StartWithWindows, Mode=TwoWay}" />
+                                <CheckBox Content="Stop the engine when exiting from the tray" IsChecked="{Binding StopEngineOnExit, Mode=TwoWay}" />
+                                <CheckBox Content="Apply the last used profile when LegacyAVR starts" IsChecked="{Binding ApplyLastProfileAtStartup, Mode=TwoWay}"
+                                          ToolTip="Only settings that differ are sent. If the profile's output is not connected, nothing is applied and you are told why." />
+                                <WrapPanel Margin="0,10,0,0">
+                                    <Button Content="{Binding AudioButtonText}" Command="{Binding ToggleAudioCommand}" Margin="0,0,8,6" />
+                                    <Button Content="Restart engine" Command="{Binding RestartEngineCommand}" Margin="0,0,8,6"
+                                            ToolTip="Re-open the input and output devices with the current settings" />
+                                    <Button Content="Shut down engine" Command="{Binding ShutdownEngineCommand}" Margin="0,0,8,6"
+                                            IsEnabled="{Binding CanShutdownEngine}" />
+                                    <Button Content="Open log folder" Command="{Binding OpenLogCommand}" Margin="0,0,8,6" />
+                                </WrapPanel>
+                                <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                                           Text="Stop audio pipeline releases the HDMI/optical output but keeps the engine ready. Shut down engine exits the AVREngine process (Start engine brings it back). In service mode only Stop audio pipeline is available; manage the service from Windows Services." />
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="CPU / LATENCY DISPLAY" Style="{StaticResource Caption}" />
+                                <Border Background="{StaticResource Surface}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12"
+                                        Padding="2" HorizontalAlignment="Left" Margin="0,4,0,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton Style="{StaticResource Segment}" GroupName="StatsEngine" Content="Avg" IsChecked="{Binding StatsAverage, Mode=TwoWay}" />
+                                        <RadioButton Style="{StaticResource Segment}" GroupName="StatsEngine" Content="Live" IsChecked="{Binding StatsLive, Mode=TwoWay}" />
+                                        <RadioButton Style="{StaticResource Segment}" GroupName="StatsEngine" Content="Off" IsChecked="{Binding StatsOff, Mode=TwoWay}" />
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                                           Text="Same switch as next to the CPU / latency readout at the top: 10-second average, live value, or hidden." />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+        </TabControl>
+
+        <!-- ================================================================ footer -->
+        <Border Grid.Row="5" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="0,8,0,0" Margin="0,12,0,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="DSP " Style="{StaticResource Mono}" />
+                    <TextBlock Text="{Binding DspText}" Style="{StaticResource Mono}" Foreground="{StaticResource Text}" Margin="0,0,18,0" />
+                    <TextBlock Text="Buffers " Style="{StaticResource Mono}" />
+                    <TextBlock Text="{Binding BufferText}" Style="{StaticResource Mono}" Foreground="{StaticResource Text}" Margin="0,0,18,0" />
+                    <TextBlock Text="Clock drift " Style="{StaticResource Mono}" />
+                    <TextBlock Text="{Binding DriftText}" Style="{StaticResource Mono}" Foreground="{StaticResource Text}" Margin="0,0,18,0" />
+                    <TextBlock Text="{Binding CountersText}" Style="{StaticResource Mono}" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="{Binding LastCommandError}" Style="{StaticResource Mono}" Foreground="{StaticResource Warn}"
+                           HorizontalAlignment="Right" VerticalAlignment="Center" Margin="12,0,16,0" TextTrimming="CharacterEllipsis" />
+                <!-- v1.2.0: subwoofer present or not (default on) -->
+                <Border Grid.Column="2" Background="{StaticResource Surface}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12"
+                        Padding="10,2" VerticalAlignment="Center"
+                        ToolTip="Active: you have a subwoofer (5.1 with LFE). Inactive: no subwoofer - LegacyAVR sends 5.0 and plays the LFE through the front speakers. The brackets show the channels being output right now. Changing it re-opens the output.">
+                    <CheckBox Content="{Binding SubToggleText}" IsChecked="{Binding DedicatedSub, Mode=TwoWay}" Margin="0,2" />
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

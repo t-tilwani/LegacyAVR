@@ -1,0 +1,82 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.0.0.0
+MinimumVisualStudioVersion = 17.0.0.0
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Engine", "Engine", "{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E10}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "UI", "UI", "{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E11}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E12}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E13}"
+	ProjectSection(SolutionItems) = preProject
+		vcpkg.json = vcpkg.json
+		README.md = README.md
+		docs\ARCHITECTURE.md = docs\ARCHITECTURE.md
+		build\LegacyAVR.Cpp.props = build\LegacyAVR.Cpp.props
+		CMakeLists.txt = CMakeLists.txt
+		CMakePresets.json = CMakePresets.json
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LegacyAVR.Core", "engine\LegacyAVR.Core.vcxproj", "{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E01}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AVREngine", "engine\AVREngine.vcxproj", "{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E02}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AVREngineService", "engine\AVREngineService.vcxproj", "{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E03}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "LegacyAVR.Tests", "tests\LegacyAVR.Tests.vcxproj", "{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E04}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LegacyAVR.UI", "ui\LegacyAVR.UI\LegacyAVR.UI.csproj", "{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E05}"
+	ProjectSection(ProjectDependencies) = postProject
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E02} = {6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E02}
+	EndProjectSection
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LegacyAVR.UI.Tests", "ui\LegacyAVR.UI.Tests\LegacyAVR.UI.Tests.csproj", "{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E06}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E01}.Debug|x64.ActiveCfg = Debug|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E01}.Debug|x64.Build.0 = Debug|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E01}.Release|x64.ActiveCfg = Release|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E01}.Release|x64.Build.0 = Release|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E02}.Debug|x64.ActiveCfg = Debug|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E02}.Debug|x64.Build.0 = Debug|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E02}.Release|x64.ActiveCfg = Release|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E02}.Release|x64.Build.0 = Release|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E03}.Debug|x64.ActiveCfg = Debug|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E03}.Debug|x64.Build.0 = Debug|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E03}.Release|x64.ActiveCfg = Release|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E03}.Release|x64.Build.0 = Release|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E04}.Debug|x64.ActiveCfg = Debug|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E04}.Debug|x64.Build.0 = Debug|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E04}.Release|x64.ActiveCfg = Release|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E04}.Release|x64.Build.0 = Release|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E05}.Debug|x64.ActiveCfg = Debug|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E05}.Debug|x64.Build.0 = Debug|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E05}.Release|x64.ActiveCfg = Release|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E05}.Release|x64.Build.0 = Release|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E06}.Debug|x64.ActiveCfg = Debug|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E06}.Debug|x64.Build.0 = Debug|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E06}.Release|x64.ActiveCfg = Release|x64
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E06}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E01} = {6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E10}
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E02} = {6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E10}
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E03} = {6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E10}
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E05} = {6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E11}
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E04} = {6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E12}
+		{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E06} = {6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E12}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4EFF}
+	EndGlobalSection
+EndGlobal

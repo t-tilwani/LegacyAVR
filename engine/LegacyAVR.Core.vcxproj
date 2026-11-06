@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>18.0</VCProjectVersion>
+    <ProjectGuid>{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E01}</ProjectGuid>
+    <RootNamespace>LegacyAVRCore</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="..\build\LegacyAVR.Cpp.props" />
+  </ImportGroup>
+
+  <ItemGroup Label="Core (portable DSP / encode)">
+    <ClInclude Include="core\BassManager.h" />
+    <ClInclude Include="core\ChannelEq.h" />
+    <ClInclude Include="core\Biquad.h" />
+    <ClInclude Include="core\ChannelMatrix.h" />
+    <ClInclude Include="core\DriftController.h" />
+    <ClInclude Include="core\Dynamics.h" />
+    <ClInclude Include="core\Encoder.h" />
+    <ClInclude Include="core\FrequencyRange.h" />
+    <ClInclude Include="core\Iec61937.h" />
+    <ClInclude Include="core\LiveParams.h" />
+    <ClInclude Include="core\Meter.h" />
+    <ClInclude Include="core\OutputPolicy.h" />
+    <ClInclude Include="core\ProcessingCore.h" />
+    <ClInclude Include="core\Resampler.h" />
+    <ClInclude Include="core\SpscRing.h" />
+    <ClInclude Include="core\TestSignals.h" />
+    <ClInclude Include="core\Types.h" />
+    <ClInclude Include="core\Upmixer.h" />
+    <ClCompile Include="core\BassManager.cpp" />
+    <ClCompile Include="core\ChannelEq.cpp" />
+    <ClCompile Include="core\ChannelMatrix.cpp" />
+    <ClCompile Include="core\Dynamics.cpp" />
+    <ClCompile Include="core\Encoder.cpp" />
+    <ClCompile Include="core\FrequencyRange.cpp" />
+    <ClCompile Include="core\Iec61937.cpp" />
+    <ClCompile Include="core\OutputPolicy.cpp" />
+    <ClCompile Include="core\ProcessingCore.cpp" />
+    <ClCompile Include="core\Resampler.cpp" />
+    <ClCompile Include="core\TestSignals.cpp" />
+    <ClCompile Include="core\Upmixer.cpp" />
+  </ItemGroup>
+  <ItemGroup Label="IPC">
+    <ClInclude Include="ipc\ControlProtocol.h" />
+    <ClInclude Include="ipc\TelemetryLayout.h" />
+    <ClCompile Include="ipc\ControlProtocol.cpp" />
+  </ItemGroup>
+  <ItemGroup Label="Windows (WASAPI, IPC, host)">
+    <ClInclude Include="win\ConfigStore.h" />
+    <ClInclude Include="win\EngineHost.h" />
+    <ClInclude Include="win\Logger.h" />
+    <ClInclude Include="win\PipeServer.h" />
+    <ClInclude Include="win\SpeechClips.h" />
+    <ClInclude Include="win\TelemetryWriter.h" />
+    <ClInclude Include="win\WasapiCapture.h" />
+    <ClInclude Include="win\WasapiDevices.h" />
+    <ClInclude Include="win\WasapiRenderer.h" />
+    <ClInclude Include="win\WinUtil.h" />
+    <ClCompile Include="win\ConfigStore.cpp" />
+    <ClCompile Include="win\EngineHost.cpp" />
+    <ClCompile Include="win\Logger.cpp" />
+    <ClCompile Include="win\PipeServer.cpp" />
+    <ClCompile Include="win\SpeechClips.cpp" />
+    <ClCompile Include="win\TelemetryWriter.cpp" />
+    <ClCompile Include="win\WasapiCapture.cpp" />
+    <ClCompile Include="win\WasapiDevices.cpp" />
+    <ClCompile Include="win\WasapiRenderer.cpp" />
+    <ClCompile Include="win\WinUtil.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

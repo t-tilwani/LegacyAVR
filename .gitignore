@@ -1,0 +1,96 @@
+# LegacyAVR - files that must never be published.
+
+# ---------------------------------------------------------------- build output
+bin/
+obj/
+out/
+.vs/
+x64/
+Debug/
+Release/
+TestResults/
+vcpkg_installed/
+CMakeFiles/
+CMakeCache.txt
+cmake-build-*/
+*.tlog
+*.lastbuildstate
+*.recipe
+*.ilk
+*.pdb
+*.iobj
+*.ipdb
+*.obj
+*.lib
+*.exp
+*.idb
+*.pch
+*.ipch
+*.res
+*.aps
+# "build/" holds generated output, except the shared MSBuild properties file that the
+# projects import (build/LegacyAVR.Cpp.props is source and must stay tracked).
+/build/*
+!/build/LegacyAVR.Cpp.props
+
+# ---------------------------------------------------------------- IDE / user-specific
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.opendb
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------- logs, runtime data, test output
+*.log
+logs/
+native-test-failures.txt
+*.dmp
+*.mdmp
+*.etl
+*.wav
+*.pcm
+*.raw
+engine.cfg
+ui-settings.json
+profiles.json
+presets.json
+device-profiles.json
+
+# ---------------------------------------------------------------- secrets, environment, signing
+.env
+.env.*
+*.env
+*.pfx
+*.p12
+*.pem
+*.key
+*.snk
+*.cer
+*.crt
+*.publishsettings
+secrets.json
+
+# ---------------------------------------------------------------- release packaging (attach to GitHub Releases, don't commit)
+*.zip
+*.7z
+*.msi
+*.msix
+*.exe
+*.dll
+SHA256SUMS*.txt
+
+# ---------------------------------------------------------------- AI assistant / temporary files
+.claude/
+CLAUDE.local.md
+*.tmp
+*.temp
+*.bak
+*.orig

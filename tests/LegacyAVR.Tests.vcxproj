@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>18.0</VCProjectVersion>
+    <ProjectGuid>{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E04}</ProjectGuid>
+    <RootNamespace>LegacyAVRTests</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="..\build\LegacyAVR.Cpp.props" />
+  </ImportGroup>
+  <PropertyGroup>
+    <TargetName>LegacyAVR.Tests</TargetName>
+    <LocalDebuggerCommandArguments></LocalDebuggerCommandArguments>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClInclude Include="PipelineSim.h" />
+    <ClInclude Include="TestFramework.h" />
+    <ClCompile Include="TestMain.cpp" />
+    <ClCompile Include="test_core.cpp" />
+    <ClCompile Include="test_codec.cpp" />
+    <ClCompile Include="bench.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\engine\LegacyAVR.Core.vcxproj">
+      <Project>{6C1E2A10-4B7D-4E8A-9F21-0A1B2C3D4E01}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Shared MSBuild settings for every native LegacyAVR project.
+  Toolset: Visual Studio 2026 (v145), MSVC C++23 (/std:c++latest), x64 only.
+  FFmpeg comes from vcpkg in manifest mode (vcpkg.json at the repository root).
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="UserMacros">
+    <LegacyAvrRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\'))</LegacyAvrRoot>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <OutDir>$(LegacyAvrRoot)bin\$(Configuration)\</OutDir>
+    <IntDir>$(LegacyAvrRoot)obj\$(MSBuildProjectName)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+
+  <!-- vcpkg manifest mode: installs ffmpeg[avcodec,swresample] on first build. -->
+  <PropertyGroup Label="Vcpkg">
+    <VcpkgEnableManifest>true</VcpkgEnableManifest>
+    <VcpkgManifestRoot>$(LegacyAvrRoot)</VcpkgManifestRoot>
+    <VcpkgInstalledDir>$(LegacyAvrRoot)vcpkg_installed\</VcpkgInstalledDir>
+    <VcpkgTriplet>x64-windows</VcpkgTriplet>
+    <VcpkgUseStatic>false</VcpkgUseStatic>
+    <VcpkgAutoLink>true</VcpkgAutoLink>
+    <VcpkgApplocalDeps>true</VcpkgApplocalDeps>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <ConformanceMode>true</ConformanceMode>
+      <WarningLevel>Level4</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <SDLCheck>true</SDLCheck>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/utf-8 /Zc:__cplusplus /Zc:preprocessor /external:anglebrackets /external:W0 %(AdditionalOptions)</AdditionalOptions>
+      <!-- No _WIN32_WINNT / NTDDI_VERSION override: the Windows 11 SDK defaults expose
+           the newest APIs (power throttling, SetThreadDescription). -->
+      <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(LegacyAvrRoot)engine;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <!-- FFmpeg headers trigger C4244 etc.; they are external (angle brackets) and silenced above. -->
+      <DisableSpecificWarnings>4324;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>avrt.lib;ole32.lib;propsys.lib;shlwapi.lib;shell32.lib;advapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+    </ClCompile>
+  </ItemDefinitionGroup>
+
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <!-- AVX2 auto-vectorisation of the DSP loops (Haswell / Zen 1 or newer). -->
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+    </Link>
+    <Lib>
+      <LinkTimeCodeGeneration>true</LinkTimeCodeGeneration>
+    </Lib>
+  </ItemDefinitionGroup>
+</Project>

@@ -1,0 +1,138 @@
+<Window x:Class="LegacyAVR.UI.EqWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="clr-namespace:LegacyAVR.UI.ViewModels"
+        mc:Ignorable="d"
+        d:DataContext="{d:DesignInstance Type=vm:EqDialogViewModel}"
+        Title="{Binding Title}" Width="820" Height="700" MinWidth="700" MinHeight="560"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Style="{StaticResource DarkWindow}">
+
+    <!-- v1.4.0: custom EQ of one output channel. Opened from the EQ button of a mixer strip. -->
+    <Window.Resources>
+        <!-- One band: name | frequency (log slider) | gain | Q (bells only). Every slider has its own reset. -->
+        <DataTemplate x:Key="BandRow" DataType="{x:Type vm:EqBandViewModel}">
+            <Border Background="{StaticResource Surface2}" CornerRadius="6" Padding="10,6" Margin="0,0,0,6">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="80" />
+                        <ColumnDefinition Width="*" MinWidth="120" />
+                        <ColumnDefinition Width="70" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="*" MinWidth="100" />
+                        <ColumnDefinition Width="62" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="16" />
+                        <ColumnDefinition Width="0.7*" MinWidth="80" />
+                        <ColumnDefinition Width="52" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
+
+                    <Slider Grid.Column="1" Minimum="{Binding FreqLogMin}" Maximum="{Binding FreqLogMax}" SmallChange="0.01" LargeChange="0.1"
+                            Value="{Binding FreqLog, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="Frequency (logarithmic: every octave gets the same travel)" />
+                    <TextBlock Grid.Column="2" Text="{Binding FreqText}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    <Button Grid.Column="3" Style="{StaticResource ResetButton}" CommandParameter="{Binding FreqResetKey}"
+                            Command="{Binding DataContext.Main.ResetCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+
+                    <Slider Grid.Column="5" Minimum="-6" Maximum="6" SmallChange="0.5" LargeChange="1" TickFrequency="0.5" IsSnapToTickEnabled="True"
+                            Value="{Binding GainDb, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="Gain, -6 to +6 dB" />
+                    <TextBlock Grid.Column="6" Text="{Binding GainText}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    <Button Grid.Column="7" Style="{StaticResource ResetButton}" CommandParameter="{Binding GainResetKey}"
+                            Command="{Binding DataContext.Main.ResetCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+
+                    <Slider Grid.Column="9" Minimum="{Binding QMin}" Maximum="{Binding QMax}" SmallChange="0.05" LargeChange="0.25"
+                            Value="{Binding Q, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="Q: low = wide, high = narrow (0.5 - 4)"
+                            Visibility="{Binding HasQ, Converter={StaticResource BoolToVis}}" />
+                    <TextBlock Grid.Column="10" Text="{Binding QText}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                               Visibility="{Binding HasQ, Converter={StaticResource BoolToVis}}" />
+                    <Button Grid.Column="11" Style="{StaticResource ResetButton}" CommandParameter="{Binding QResetKey}"
+                            Command="{Binding DataContext.Main.ResetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                            Visibility="{Binding HasQ, Converter={StaticResource BoolToVis}}" />
+                    <TextBlock Grid.Column="9" Grid.ColumnSpan="3" Text="shelf: no Q" Style="{StaticResource Dim}" FontSize="11"
+                               VerticalAlignment="Center" Visibility="{Binding HasQ, Converter={StaticResource BoolToVisInv}}" />
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid Margin="18,14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- channel, master and channel switches -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="220" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Channel  " Style="{StaticResource Dim}" VerticalAlignment="Center" />
+            <ComboBox Grid.Column="1" ItemsSource="{Binding Main.EqChannels}" SelectedItem="{Binding Channel, Mode=TwoWay}" DisplayMemberPath="Name" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <CheckBox Content="Custom EQ (all channels)" IsChecked="{Binding Main.EqEnabled, Mode=TwoWay}" Margin="0,0,18,0"
+                          ToolTip="Master switch. Off = every channel flat (bypassed); your settings are kept." />
+                <CheckBox Content="EQ on this channel" IsChecked="{Binding Channel.Enabled, Mode=TwoWay}"
+                          ToolTip="Bypass only this channel; its settings are kept." />
+            </StackPanel>
+        </Grid>
+
+        <!-- audition -->
+        <Border Grid.Row="1" Background="{StaticResource Surface}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8"
+                Padding="12,8" Margin="0,12,0,0">
+            <StackPanel>
+                <CheckBox Content="Audition: play only this channel while tuning" IsChecked="{Binding Audition, Mode=TwoWay}" FontWeight="SemiBold" />
+                <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="22,2,0,0" TextWrapping="Wrap"
+                           Text="The other channels are muted only while auditioning; it ends when you untick it or close this window. Your saved mixer mutes are not changed." />
+            </StackPanel>
+        </Border>
+
+        <!-- response curve -->
+        <Border Grid.Row="2" Background="{StaticResource Bg}" CornerRadius="8" Padding="10" Margin="0,12,0,0">
+            <StackPanel>
+                <Viewbox Stretch="Uniform" MaxHeight="190">
+                    <Canvas Width="600" Height="160" ClipToBounds="True">
+                        <!-- +12 / +6 / 0 / -6 / -12 dB -->
+                        <Line X1="0" X2="600" Y1="80" Y2="80" Stroke="{StaticResource TextDim}" StrokeThickness="1" />
+                        <Line X1="0" X2="600" Y1="40" Y2="40" Stroke="{StaticResource Line}" StrokeThickness="1" StrokeDashArray="3 3" />
+                        <Line X1="0" X2="600" Y1="120" Y2="120" Stroke="{StaticResource Line}" StrokeThickness="1" StrokeDashArray="3 3" />
+                        <!-- 100 Hz, 1 kHz, 10 kHz (log axis 20 Hz .. 20 kHz) -->
+                        <Line X1="140" X2="140" Y1="0" Y2="160" Stroke="{StaticResource Line}" StrokeThickness="1" />
+                        <Line X1="340" X2="340" Y1="0" Y2="160" Stroke="{StaticResource Line}" StrokeThickness="1" />
+                        <Line X1="540" X2="540" Y1="0" Y2="160" Stroke="{StaticResource Line}" StrokeThickness="1" />
+                        <TextBlock Canvas.Left="2" Canvas.Top="26" Text="+6 dB" FontSize="9" Foreground="{StaticResource TextDim}" />
+                        <TextBlock Canvas.Left="2" Canvas.Top="106" Text="-6 dB" FontSize="9" Foreground="{StaticResource TextDim}" />
+                        <TextBlock Canvas.Left="144" Canvas.Top="146" Text="100 Hz" FontSize="9" Foreground="{StaticResource TextDim}" />
+                        <TextBlock Canvas.Left="344" Canvas.Top="146" Text="1 kHz" FontSize="9" Foreground="{StaticResource TextDim}" />
+                        <TextBlock Canvas.Left="544" Canvas.Top="146" Text="10 kHz" FontSize="9" Foreground="{StaticResource TextDim}" />
+                        <Polyline Points="{Binding Channel.Curve}" Stroke="{StaticResource Accent}" StrokeThickness="2" />
+                    </Canvas>
+                </Viewbox>
+                <TextBlock Text="{Binding Main.EqHeadroomText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <!-- bands -->
+        <ScrollViewer Grid.Row="3" VerticalScrollBarVisibility="Auto" Margin="0,12,0,0">
+            <StackPanel>
+                <TextBlock Text="{Binding FreqRangeText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,0,0,8" TextWrapping="Wrap" />
+                <ItemsControl ItemsSource="{Binding Channel.Bands}" ItemTemplate="{StaticResource BandRow}" />
+                <TextBlock Text="{Binding Main.EqStatusText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <Grid Grid.Row="4" Margin="0,12,0,0">
+            <Button Content="Reset this channel to flat..." Command="{Binding ResetChannelCommand}" HorizontalAlignment="Left"
+                    ToolTip="All five bands of this channel back to 0 dB at their default frequencies (asks first)" />
+            <Button Content="Close" Style="{StaticResource AccentButton}" HorizontalAlignment="Right" IsCancel="True" Click="OnClose" />
+        </Grid>
+    </Grid>
+</Window>

@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- WinForms is used only for the NotifyIcon (system tray). -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- Explicit usings avoid WPF/WinForms type-name clashes (Application, Brush, ...). -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- WFO0003 is a WinForms-only hint; this is a WPF app, so per-monitor DPI belongs in app.manifest. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RootNamespace>LegacyAVR.UI</RootNamespace>
+    <AssemblyName>LegacyAVR.UI</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.4.0</Version>
+    <Product>LegacyAVR</Product>
+    <Description>LegacyAVR control panel</Description>
+    <!-- Same output folder as AVREngine.exe so the UI can launch the engine. -->
+    <OutputPath>$(MSBuildThisFileDirectory)..\..\bin\$(Configuration)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="LegacyAVR.UI.Tests" />
+  </ItemGroup>
+
+</Project>
