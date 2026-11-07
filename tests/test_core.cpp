@@ -9,6 +9,7 @@
 #include "../engine/core/Iec61937.h"
 #include "../engine/core/OutputPolicy.h"
 #include "../engine/core/SpscRing.h"
+#include "../engine/core/StatusText.h"
 #include "../engine/core/TestSignals.h"
 #include "../engine/core/Upmixer.h"
 #include "../engine/ipc/ControlProtocol.h"
@@ -325,6 +326,7 @@ TEST(Ipc, V12Commands) {
     CHECK(parseRequest("SET_LFE_GEN always").cmd == Cmd::SetLfeGen);
     CHECK(parseRequest("SET_GAMING AUTO").cmd == Cmd::SetGaming);
     CHECK(parseRequest("SET_GAME_LFE 1").cmd == Cmd::SetGameLfe);
+    CHECK(parseRequest("set_lfe_fold 0").cmd == Cmd::SetLfeFold);    // v1.5.0
     CHECK(parseRequest("set_lfe_reset 30").cmd == Cmd::SetLfeReset);
     const auto g = parseRequest("GAME_DETECTED 1 \"Some Game.exe\"");
     CHECK(g.cmd == Cmd::GameDetected);
@@ -384,13 +386,40 @@ TEST(Dsp, LowShelfBassControl) {
     CHECK_NEAR(flat.magnitude(48000, 50), 1.0, 1e-4);
 }
 
+// v1.5.0: the fold low-passes the LFE (120 Hz), adds it to FL/FR at -3 dB each and ramps.
 TEST(Bass, FoldLfeIntoFronts) {
-    Bus b(64);
-    for (size_t i = 0; i < 64; ++i) { b.buf[LFE][i] = 0.2f; b.buf[FL][i] = 0.1f; }
-    BassManager::foldLfeIntoFronts(b.ptr.data(), 64);
-    CHECK_NEAR(b.buf[FL][10], 0.3, 1e-6);
-    CHECK_NEAR(b.buf[FR][10], 0.2, 1e-6);
-    CHECK_NEAR(b.buf[LFE][10], 0.0, 1e-9);
+    BassManager bm;
+    const size_t n = kBlockFrames;
+    double ph = 0, ph2 = 0;
+    auto block = [&](Bus& b, bool enable) {
+        for (size_t i = 0; i < n; ++i) {
+            // 31.25 Hz (exactly one period per block) + 2 kHz out-of-band junk
+            b.buf[LFE][i] = 0.4f * float(std::sin(ph)) + 0.2f * float(std::sin(ph2));
+            b.buf[FL][i] = 0.0f;
+            b.buf[FR][i] = 0.0f;
+            ph += 2 * kPi * 31.25 / 48000.0;
+            ph2 += 2 * kPi * 2000.0 / 48000.0;
+        }
+        bm.foldLfeIntoFronts(b.ptr.data(), n, enable);
+    };
+    Bus b(n);
+    for (int k = 0; k < 10; ++k) block(b, true);
+    CHECK_NEAR(bm.foldGain(), BassManager::kFoldGain, 1e-6);
+    // 31 Hz passes (LR4 @ 120 Hz: ~ -0.04 dB), 2 kHz is gone: FL rms ~= 0.4/sqrt2 * 0.707
+    CHECK_NEAR(b.rms(FL), 0.4 / std::sqrt(2.0) * 0.7071, 0.01);
+    CHECK_NEAR(b.rms(FR), b.rms(FL), 1e-6);
+    CHECK_NEAR(b.rms(LFE), 0.0, 1e-9);                       // LFE plane cleared
+    // Equal power: FL + FR together carry the LFE power.
+    CHECK_NEAR(b.rms(FL) * b.rms(FL) + b.rms(FR) * b.rms(FR), 0.4 * 0.4 / 2.0, 0.01);
+    // Off: the LFE is discarded (plane still cleared), after a one-block ramp - no click.
+    block(b, false);
+    double maxStep = 0;
+    for (size_t i = 1; i < n; ++i) maxStep = std::max(maxStep, double(std::fabs(b.buf[FL][i] - b.buf[FL][i - 1])));
+    CHECK(maxStep < 0.01);
+    block(b, false);
+    CHECK_NEAR(b.rms(FL), 0.0, 1e-9);
+    CHECK_NEAR(b.rms(LFE), 0.0, 1e-9);
+    CHECK_NEAR(bm.foldGain(), 0.0, 1e-9);
 }
 
 TEST(Bass, GeneratorIsLowPassAndRamps) {
@@ -398,7 +427,7 @@ TEST(Bass, GeneratorIsLowPassAndRamps) {
     bm.setGenerator(80.0f, 0.0f);
     const size_t n = kBlockFrames;
     double ph40 = 0, ph2k = 0;
-    auto block = [&](Bus& b, bool enable, bool noSub) {
+    auto block = [&](Bus& b, bool enable) {
         for (size_t i = 0; i < n; ++i) {
             const float lo = 0.25f * float(std::sin(ph40));
             const float hi = 0.25f * float(std::sin(ph2k));
@@ -407,19 +436,16 @@ TEST(Bass, GeneratorIsLowPassAndRamps) {
             b.buf[FC][i] = lo + hi;
             b.buf[LFE][i] = 0.0f;
         }
-        bm.generateLfe(b.ptr.data(), n, enable, noSub);
+        bm.generateLfe(b.ptr.data(), n, enable);
     };
     Bus b(n);
-    for (int k = 0; k < 8; ++k) block(b, true, false);       // ~0.26 s: ramping
+    for (int k = 0; k < 8; ++k) block(b, true);              // ~0.26 s: ramping
     CHECK(bm.generatorGain() > 0.4f && bm.generatorGain() < 0.6f);
-    for (int k = 0; k < 20; ++k) block(b, true, false);
+    for (int k = 0; k < 20; ++k) block(b, true);
     CHECK_NEAR(bm.generatorGain(), 1.0, 1e-6);
     // 40 Hz passes (LR4 at 80 Hz: about -1 dB), 2 kHz is gone: LFE rms ~= 0.35 * 0.177 * 0.89
     CHECK_NEAR(b.rms(LFE), 0.35 * 0.25 / std::sqrt(2.0) * 0.89, 0.01);
-    // centre/surround-only source without a subwoofer still sees the centre
-    for (int k = 0; k < 4; ++k) block(b, true, true);
-    CHECK(b.rms(LFE) > 0.02);
-    for (int k = 0; k < 12; ++k) block(b, false, false);     // 0.38 s > 0.3 s fade-out
+    for (int k = 0; k < 12; ++k) block(b, false);            // 0.38 s > 0.3 s fade-out
     CHECK_NEAR(bm.generatorGain(), 0.0, 1e-9);
 }
 
@@ -500,7 +526,9 @@ TEST(Config, LfeSettingsPersist) {
     using avr::win::EngineConfig;
     const auto file = fs::temp_directory_path() / "legacyavr-test-engine.cfg";
     EngineConfig def;
-    CHECK(!def.gameLfeGen);                                  // defaults
+    CHECK(def.gameLfeGen);                                   // v1.5.0 new-install defaults
+    CHECK(def.gaming == GamingMode::Off);
+    CHECK(def.lfeFold);
     CHECK_NEAR(def.lfeResetSeconds, 10.0, 1e-6);
     EngineConfig a;
     a.gameLfeGen = true;
@@ -518,6 +546,13 @@ TEST(Config, LfeSettingsPersist) {
     CHECK(b.gaming == GamingMode::On);
     CHECK(!b.dedicatedSub);
     CHECK_NEAR(b.bassDb, -3.5, 1e-4);
+    CHECK(b.lfeFold);
+    a.lfeFold = false;
+    CHECK(avr::win::saveConfig(file, a));
+    EngineConfig b2;
+    CHECK(avr::win::loadConfig(file, b2));
+    CHECK(!b2.lfeFold);
+    a.lfeFold = true;
     // v1.4.0: 1..300 whole seconds. 3 s is now valid; out-of-range values are corrected on load.
     for (const auto& [saved, loaded] : {std::pair{3.0f, 3.0f}, std::pair{1.0f, 1.0f}, std::pair{300.0f, 300.0f},
                                          std::pair{0.0f, 1.0f}, std::pair{600.0f, 300.0f}, std::pair{12.4f, 12.0f}}) {
@@ -529,6 +564,77 @@ TEST(Config, LfeSettingsPersist) {
     }
     std::error_code ec;
     fs::remove(file, ec);
+}
+
+// v1.5.0: new defaults (Game Mode off, Game Mode LFE on, LFE fold on) are for new installs only:
+// a file written by an older version keeps behaving as it did.
+TEST(Config, OlderFilesKeepTheirDefaults) {
+    namespace fs = std::filesystem;
+    using avr::win::EngineConfig;
+    const auto file = fs::temp_directory_path() / "legacyavr-test-legacy.cfg";
+    {
+        std::ofstream out(file, std::ios::trunc);
+        out << "codec=AC3\nupmix=UPMIX51\ndedicated_sub=0\n";   // v1.1-era file: no gaming / game_lfe_gen / lfe_fold
+    }
+    EngineConfig c;
+    CHECK(avr::win::loadConfig(file, c));
+    CHECK(c.gaming == avr::win::kLegacyGamingDefault);
+    CHECK(c.gameLfeGen == avr::win::kLegacyGameLfeGenDefault);
+    CHECK(c.lfeFold);                                        // every older version folded
+    {
+        std::ofstream out(file, std::ios::trunc);
+        out << "gaming=OFF\ngame_lfe_gen=1\nlfe_fold=0\n";
+    }
+    EngineConfig d;
+    CHECK(avr::win::loadConfig(file, d));
+    CHECK(d.gaming == GamingMode::Off);
+    CHECK(d.gameLfeGen);
+    CHECK(!d.lfeFold);
+    std::error_code ec;
+    fs::remove(file, ec);
+}
+
+// v1.5.0: the dashboard text never claims a layout that is not really sent.
+TEST(StatusText, LayoutsAreHonest) {
+    const OutputShape sub51{true, 6, true, true, false};
+    const OutputShape noSub50{true, 5, false, true, true};
+    const OutputShape noSub30{true, 3, false, true, true};
+    const OutputShape dtsNoSub{true, 5, false, true, true};
+    const auto has = [](const std::string& s, const char* part) { return s.find(part) != std::string::npos; };
+    // Stereo -> 3.x
+    CHECK(has(processingText(ProcessingState::StereoUpmix31, kMaskStereo, sub51, false), "3.1 upmix"));
+    CHECK(has(processingText(ProcessingState::StereoUpmix31, kMaskStereo, sub51, false), "in a 5.1 stream"));
+    const auto t30 = processingText(ProcessingState::StereoUpmix31, kMaskStereo, noSub30, false);
+    CHECK(has(t30, "3.0 upmix") && !has(t30, "3.1") && !has(t30, "stream"));
+    CHECK(has(processingText(ProcessingState::StereoUpmix31, kMaskStereo, dtsNoSub, false), "3.0 upmix (in a 5.0 stream"));
+    CHECK(has(processingText(ProcessingState::StereoUpmix51, kMaskStereo, noSub50, false), "5.0 upmix"));
+    // Discrete 5.1 without a subwoofer: 5.0 out, LFE folded / discarded
+    const auto d51 = processingText(ProcessingState::Discrete, kMask51Side, noSub50, false);
+    CHECK(has(d51, "5.1") && has(d51, "5.0") && has(d51, "front L/R"));
+    OutputShape drop = noSub50;
+    drop.lfeFold = false;
+    CHECK(has(processingText(ProcessingState::Discrete, kMask51Side, drop, false), "discarded"));
+    // 5.0 source without a subwoofer: nothing to fold, nothing generated
+    const uint32_t m50 = kMask51Side & ~SPK_LFE;
+    CHECK(processingText(ProcessingState::Discrete, m50, noSub50, false) == "No upmix (discrete 5.0)");
+    // 7.1 is folded to 5.x - never claimed as 7.x
+    const auto f71 = processingText(ProcessingState::FoldDown71, kMask71, noSub50, false);
+    CHECK(has(f71, "5.0 fold-down") && has(f71, "front L/R"));
+    CHECK(has(processingText(ProcessingState::FoldDown71, kMask71, sub51, false), "5.1 fold-down"));
+    // PCM 2.0 says it is a downmix
+    const OutputShape pcm20{false, 2, false, true, false};
+    CHECK(has(processingText(ProcessingState::Discrete, kMask51Side, pcm20, false), "downmixed to PCM 2.0"));
+    // Layout names
+    CHECK(encodedLayoutName(3, false) == "3.0");
+    CHECK(encodedLayoutName(4, true) == "3.1");
+    CHECK(encodedLayoutName(5, false) == "5.0");
+    CHECK(has(encodedLayoutName(6, false), "LFE silent"));
+    CHECK(has(pcmLayoutName(8, true), "back pair silent"));
+    // LFE status wording
+    CHECK(has(lfeStatusText(LfeStatus::Source, noSub50, false, 0, 10, false), "folded into front L/R"));
+    CHECK(has(lfeStatusText(LfeStatus::Dropped, drop, false, 0, 10, false), "discarded"));
+    CHECK(!has(lfeStatusText(LfeStatus::None, noSub50, false, 0, 10, false), "Generat"));
+    CHECK(lfeStatusText(LfeStatus::Source, sub51, false, 0, 10, false) == "From the source");
 }
 
 TEST(Config, EqSettingsPersist) {

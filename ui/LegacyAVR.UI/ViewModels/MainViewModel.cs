@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
@@ -55,6 +56,18 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     /// <summary>Asks the user a yes/no question (replaceable in tests).</summary>
     public Func<string, bool> Confirm { get; set; } = q =>
         MessageBox.Show(q, "LegacyAVR", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK;
+
+    /// <summary>v1.5.0: shows a problem the user must see (replaceable in tests). The text also
+    /// goes to the footer's last-error line, like failed engine commands.</summary>
+    public Action<string> ShowError { get; set; } = msg =>
+        MessageBox.Show(msg, "LegacyAVR", MessageBoxButton.OK, MessageBoxImage.Warning);
+
+    /// <summary>v1.5.0: asks for a profile name (null = cancelled). Replaceable in tests.</summary>
+    public Func<string, string, string?> PromptForName { get; set; } = (title, suggestion) => NamePromptWindow.Ask(title, suggestion);
+
+    /// <summary>v1.5.0 emergency reset: true = close + stop the engine + reopen, false = close + stop only.
+    /// App handles it (it owns the process lifetime).</summary>
+    public event EventHandler<bool>? EmergencyRequested;
 
     public MainViewModel(EngineClient client, TelemetryReader reader, SettingsService settings, ProfileStore profiles)
     {
@@ -110,8 +123,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         SetDefaultOutputCommand = new RelayCommand(SetDefaultOutput, () => ShowDefaultOutputButton);
         RegisterResets();
 
-        OpenLogCommand = new RelayCommand(() => Shell(Environment.ExpandEnvironmentVariables(
-            _reader.IsServiceMapping ? @"%ProgramData%\LegacyAVR" : @"%LOCALAPPDATA%\LegacyAVR")));
+        OpenLogCommand = new RelayCommand(() => OpenLogFolder());
+        QuickSaveProfileCommand = new RelayCommand(QuickSaveProfile);
+        EmergencyRestartCommand = new RelayCommand(() => RequestEmergency(reopen: true));
+        EmergencyStopCommand = new RelayCommand(() => RequestEmergency(reopen: false));
         OpenSoundSettingsCommand = new RelayCommand(() => Shell("ms-settings:sound"));
         OpenClassicSoundCommand = new RelayCommand(() => Shell("mmsys.cpl"));
         SetStatsModeCommand = new RelayCommand(p => { if (p is string s && Enum.TryParse<StatsDisplayMode>(s, out var m)) StatsMode = m; });
@@ -173,9 +188,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         var wasSyncing = _syncing;
         _syncing = true;   // re-selecting the same mode must not send anything
         UpmixOptions = BuildUpmixOptions(_dedicatedSub);
-        LfeGenOptions = BuildLfeGenOptions(_dedicatedSub);
         if (current is { } c) SelectedUpmix = UpmixOptions.First(o => o.Value == c);
-        if (_lfeGen?.Value is { } lg) SelectedLfeGen = LfeGenOptions.First(o => o.Value == lg);
         _syncing = wasSyncing;
     }
     // v1.2.0: the setting is a safety margin on top of what the device pair needs. Values
@@ -190,23 +203,25 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         if (current != 0 && list.All(o => o.Value != current)) list.Add(new($"{current} ms safety margin", current));
         return list;
     }
-    private IReadOnlyList<Option<LfeGenKind>> _lfeGenOptions = BuildLfeGenOptions(true);
-    public IReadOnlyList<Option<LfeGenKind>> LfeGenOptions { get => _lfeGenOptions; private set => Set(ref _lfeGenOptions, value); }
+    /// <summary>LFE generation (dedicated subwoofer active): creates an LFE channel for sources without one.</summary>
+    public IReadOnlyList<Option<LfeGenKind>> LfeGenOptions { get; } = BuildLfeGenOptions();
 
-    public static IReadOnlyList<Option<LfeGenKind>> BuildLfeGenOptions(bool dedicatedSub) => dedicatedSub
-        ? new[]
-        {
-            new Option<LfeGenKind>("Auto - only for 5.0 / 7.0 sources without an LFE", LfeGenKind.Auto),
-            new Option<LfeGenKind>("Always - also stereo kept as stereo (2.0 -> 2.1)", LfeGenKind.Always),
-            new Option<LfeGenKind>("Off", LfeGenKind.Off),
-        }
-        : new[]
-        {
-            // No subwoofer: "generation" moves centre/surround bass to the front speakers.
-            new Option<LfeGenKind>("Auto - 5.0 / 7.0 sources: centre and surround bass to the fronts", LfeGenKind.Auto),
-            new Option<LfeGenKind>("Always - every multichannel source: centre and surround bass to the fronts", LfeGenKind.Always),
-            new Option<LfeGenKind>("Off", LfeGenKind.Off),
-        };
+    public static IReadOnlyList<Option<LfeGenKind>> BuildLfeGenOptions() => new[]
+    {
+        new Option<LfeGenKind>("Auto - only for 5.0 / 7.0 sources without an LFE", LfeGenKind.Auto),
+        new Option<LfeGenKind>("Always - also stereo kept as stereo (2.0 -> 2.1)", LfeGenKind.Always),
+        new Option<LfeGenKind>("Off", LfeGenKind.Off),
+    };
+
+    /// <summary>v1.5.0: the same LFE switch without a subwoofer. Nothing is generated then; it
+    /// decides what happens to an LFE the source already has.</summary>
+    public IReadOnlyList<Option<bool>> LfeFoldOptions { get; } = BuildLfeFoldOptions();
+
+    public static IReadOnlyList<Option<bool>> BuildLfeFoldOptions() => new[]
+    {
+        new Option<bool>("Fold the source's LFE into front L/R (recommended)", true),
+        new Option<bool>("Off - discard the source's LFE", false),
+    };
     public IReadOnlyList<Option<GamingKind>> GamingOptions { get; } = new[]
     {
         new Option<GamingKind>("Auto-detect full-screen games", GamingKind.Auto),
@@ -246,6 +261,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public ICommand SetDefaultOutputCommand { get; }
     public event EventHandler<int>? OpenEqRequested;
     public ICommand OpenLogCommand { get; }
+    /// <summary>v1.5.0: footer save icon - overwrites the active profile, or asks for a name.</summary>
+    public ICommand QuickSaveProfileCommand { get; }
+    /// <summary>v1.5.0: closes LegacyAVR, stops every engine process and starts LegacyAVR again.</summary>
+    public ICommand EmergencyRestartCommand { get; }
+    /// <summary>v1.5.0: closes LegacyAVR and stops every engine process (no restart).</summary>
+    public ICommand EmergencyStopCommand { get; }
     public ICommand OpenSoundSettingsCommand { get; }
     public ICommand OpenClassicSoundCommand { get; }
     public ICommand SetStatsModeCommand { get; }
@@ -442,6 +463,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(IsBassEnabled));
             OnPropertyChanged(nameof(BassDisabledText));
             OnPropertyChanged(nameof(EqStatusText));
+            OnPropertyChanged(nameof(CustomEqBadgeText));
             if (!_syncing) Send($"SET_EQ {(value ? 1 : 0)}");
         }
     }
@@ -458,6 +480,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             ? $"Custom EQ is on. {-_eqHeadroomDb:0.0} dB is taken off every channel so the boosts cannot clip (the safety limiter stays active)."
             : "Custom EQ is on.";
     public int AuditionChannel => _auditionChannel;
+    /// <summary>v1.5.0: Custom EQ indicator in the live output card ("" = hidden).</summary>
+    public string CustomEqBadgeText => !_eqEnabled ? string.Empty
+        : _outputIsPassthrough ? "CUSTOM EQ (bypassed - passthrough)" : "CUSTOM EQ";
     public string EqHeadroomText => _eqHeadroomDb < -0.05f
         ? $"Headroom: {-_eqHeadroomDb:0.0} dB is taken off every channel so the boosts cannot clip."
         : "Headroom: no reduction needed (no band boosts the signal).";
@@ -487,7 +512,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private bool _dedicatedSub = true;
     private DateTime _subChangedUtc = DateTime.MinValue;
-    /// <summary>Dedicated subwoofer active/inactive switch (Bass &amp; Subwoofer card). Off = no subwoofer: LFE is folded into the fronts.</summary>
+    /// <summary>Dedicated subwoofer active/inactive switch (Bass &amp; Subwoofer card). Off = no subwoofer: no LFE
+    /// channel is sent or generated; the source's own LFE is folded into the fronts (or discarded, see <see cref="LfeFold"/>).</summary>
     public bool DedicatedSub
     {
         get => _dedicatedSub;
@@ -497,6 +523,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(IsNoSub));
             OnPropertyChanged(nameof(SubToggleText));
             OnPropertyChanged(nameof(LfeControlsNote));
+            OnPropertyChanged(nameof(LfeCardCaption));
+            OnPropertyChanged(nameof(LfeModeNote));
+            OnPropertyChanged(nameof(GameLfeText));
             ApplySubLayout();
             RebuildUpmixOptions();
             if (_syncing) return;
@@ -505,11 +534,20 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
     public bool IsNoSub => !_dedicatedSub;
-    /// <summary>v1.4.0: the LFE crossover / level sliders stay available without a subwoofer
-    /// because LFE generation (bass redirect to the fronts) still uses them.</summary>
+    /// <summary>v1.5.0: without a subwoofer nothing creates an LFE, so the LFE crossover / level
+    /// sliders have no effect (they are disabled and keep their values).</summary>
     public string LfeControlsNote => _dedicatedSub
         ? "LFE crossover and LFE level set the subwoofer channel of the Dynamic upmix and of LFE generation."
-        : "No subwoofer: the upmix creates no LFE, but LFE crossover and LFE level still set how much centre / surround bass LFE generation moves to the front speakers.";
+        : "No subwoofer: no LFE channel is created, so LFE crossover and LFE level have no effect (their values are kept for when a subwoofer is active).";
+
+    /// <summary>v1.5.0: the LFE card is about generation with a subwoofer and about the source's own LFE without one.</summary>
+    public string LfeCardCaption => _dedicatedSub
+        ? "LFE GENERATION  (sources without their own subwoofer channel)"
+        : "SOURCE LFE WITHOUT A SUBWOOFER";
+    public string LfeModeNote => _dedicatedSub
+        ? "Creates an LFE channel for sources that have none (5.0 \u2192 5.1, and with Always stereo \u2192 2.1). Sources with their own LFE are never changed."
+        : "No subwoofer: LegacyAVR never generates an LFE channel and sends 3.0 / 5.0. This switch decides what happens to an LFE the source already has (5.1, 7.1 films and games): " +
+          "folded into the front left and right speakers (low-passed at 120 Hz, -3 dB each, the safety limiter prevents clipping) or discarded. The LFE trim on the Mixer sets how loud the folded bass is.";
     /// <summary>"Dedicated subwoofer active (5.1)" / "Dedicated subwoofer inactive (5.0)" - the
     /// layout in brackets is what is actually being output right now.</summary>
     public string SubToggleText => SubLabel(_dedicatedSub, _outputLayout);
@@ -518,14 +556,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         (sub ? "Dedicated subwoofer active" : "Dedicated subwoofer inactive") +
         (string.IsNullOrEmpty(layout) ? string.Empty : $" ({layout})");
 
-    /// <summary>"5.1", "5.0", "2.0", "7.1" for the channels leaving the engine ("" = unknown).</summary>
-    public static string OutputLayout(uint emitMask, uint emitChannels, bool dedicatedSub)
+    /// <summary>"5.1", "5.0", "3.0", "2.0" for the channels leaving the engine ("" = unknown).
+    /// <paramref name="lfeOut"/> false: the LFE slot of the format is silent (no subwoofer / PCM 2.0),
+    /// so it is not counted. The bus is 5.1, so a 7.1 PCM device carries 5.x with a silent back pair.</summary>
+    public static string OutputLayout(uint emitMask, uint emitChannels, bool lfeOut)
     {
         if (emitChannels == 0) return string.Empty;
         uint full = emitMask & ~0x8u;
         int n = 0;
         while (full != 0) { full &= full - 1; n++; }
-        bool lfe = (emitMask & 0x8u) != 0 && dedicatedSub;
+        bool lfe = (emitMask & 0x8u) != 0 && lfeOut;
+        if (n > 5) return $"5.{(lfe ? 1 : 0)} in 7.1";   // back pair silent
         return $"{n}.{(lfe ? 1 : 0)}";
     }
 
@@ -534,10 +575,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         if (Channels.Count > 3)
         {
             if (_dedicatedSub) Channels[3].Relabel("LFE", "Subwoofer (LFE)");
-            else Channels[3].Relabel("LFE \u2192 FL/FR", "Bass to front speakers");
-            if (EqChannels is { Count: > 3 }) EqChannels[3].Name = _dedicatedSub ? "Subwoofer (LFE)" : "LFE \u2192 FL/FR (no subwoofer)";
+            else if (LfeFold) Channels[3].Relabel("LFE \u2192 FL/FR", "Source LFE (folded into the fronts)");
+            else Channels[3].Relabel("LFE (off)", "Source LFE (discarded - no subwoofer)");
+            if (EqChannels is { Count: > 3 })
+                EqChannels[3].Name = _dedicatedSub ? "Subwoofer (LFE)" : LfeFold ? "LFE \u2192 FL/FR (no subwoofer)" : "LFE (discarded, no subwoofer)";
         }
         Diagnostics.SetNoSubwoofer(!_dedicatedSub);
+        _lastEmitMask = uint.MaxValue;   // meter names / dimmed LFE follow the switch on the next tick
     }
 
     private Option<LfeGenKind>? _lfeGen;
@@ -551,9 +595,32 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
 
+    private Option<bool>? _lfeFold;
+    /// <summary>v1.5.0: the LFE switch in no-subwoofer mode (see <see cref="LfeFoldOptions"/>).</summary>
+    public Option<bool>? SelectedLfeFold
+    {
+        get => _lfeFold;
+        set
+        {
+            if (!Set(ref _lfeFold, value) || value is null) return;
+            OnPropertyChanged(nameof(LfeFold));
+            ApplySubLayout();
+            if (!_syncing) Send($"SET_LFE_FOLD {(value.Value ? 1 : 0)}");
+        }
+    }
+    public bool LfeFold
+    {
+        get => _lfeFold?.Value ?? FactoryDefaults.LfeFold;
+        set => SelectedLfeFold = LfeFoldOptions.First(o => o.Value == value);
+    }
+
     /// <summary>The general LFE-generation control is disabled while Game Mode's own LFE toggle
     /// is on AND a game is active, because that toggle overrides it.</summary>
     public bool IsGeneralLfeGenEnabled => !(_gameLfeGen && _gamingActive);
+    /// <summary>v1.5.0: Game Mode's LFE generation only exists with a dedicated subwoofer.</summary>
+    public string GameLfeText => _dedicatedSub
+        ? "On: while a game is active, every source without its own LFE gets one (5.0 to 5.1, stereo to 2.1). Games that use their own LFE pause it, exactly like Auto."
+        : "Needs a dedicated subwoofer - without one no LFE is generated, in games or otherwise (the setting is kept).";
     public string LfeOverrideText => IsGeneralLfeGenEnabled
         ? string.Empty
         : "Overridden by Game Mode: LFE generation is on while this game is running.";
@@ -815,7 +882,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public string LatencyBreakdown { get => _latencyBreakdown; private set => Set(ref _latencyBreakdown, value); }
     public string MarginText { get => _marginText; private set => Set(ref _marginText, value); }
     private bool _outputIsPassthrough;
-    public bool OutputIsPassthrough { get => _outputIsPassthrough; private set => Set(ref _outputIsPassthrough, value); }
+    public bool OutputIsPassthrough
+    {
+        get => _outputIsPassthrough;
+        private set { if (Set(ref _outputIsPassthrough, value)) OnPropertyChanged(nameof(CustomEqBadgeText)); }
+    }
 
     private static string Hz(float f) => f >= 1000 ? $"{f / 1000:0.0#} kHz" : $"{f:0} Hz";
 
@@ -989,8 +1060,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             BassDb = D("bass_db", 0);
             DedicatedSub = S("dedicated_sub", "1") != "0";
             SelectedLfeGen = LfeGenOptions.FirstOrDefault(o => ProfileStore.LfeGenToken(o.Value) == S("lfe_gen", "AUTO")) ?? LfeGenOptions[0];
-            SelectedGaming = GamingOptions.FirstOrDefault(o => ProfileStore.GamingToken(o.Value) == S("gaming", "AUTO")) ?? GamingOptions[0];
-            GameLfeGen = B("game_lfe_gen");
+            var gamingToken = S("gaming", ProfileStore.GamingToken(FactoryDefaults.Gaming));
+            SelectedGaming = GamingOptions.FirstOrDefault(o => ProfileStore.GamingToken(o.Value) == gamingToken)
+                             ?? GamingOptions.First(o => o.Value == FactoryDefaults.Gaming);
+            GameLfeGen = S("game_lfe_gen", FactoryDefaults.GameLfeGen ? "1" : "0") == "1";
+            LfeFold = S("lfe_fold", FactoryDefaults.LfeFold ? "1" : "0") == "1";
             LfeResetSeconds = D("lfe_reset_s", 10);
             NightMode = B("night_mode");
             StereoAs20 = B("stereo_as_20");
@@ -1103,7 +1177,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             Name = name, Description = description, DeviceId = dev?.Id, DeviceName = dev?.Name,
             Codec = _codec?.Value ?? CodecKind.AC3, Bitrate = _bitrate?.Value ?? 0, OutputMode = _outputMode?.Value ?? OutputModeKind.Exclusive,
             BufferMs = _bufferMs, Upmix = _upmix?.Value ?? UpmixKind.Upmix51, StereoAs20 = _stereoAs20, NightMode = _nightMode,
-            LfeGen = _lfeGen?.Value ?? LfeGenKind.Auto, Gaming = _gaming?.Value ?? GamingKind.Auto, GameLfeGen = _gameLfeGen,
+            LfeGen = _lfeGen?.Value ?? LfeGenKind.Auto, Gaming = _gaming?.Value ?? FactoryDefaults.Gaming, GameLfeGen = _gameLfeGen,
+            LfeFold = this.LfeFold,
             LfeResetSeconds = _lfeResetSeconds, BassDb = _bassDb, CentreLevel = _centre, CentreFloor = _centreFloor,
             DialogBoost = _dialog, SurroundLevel = _surround, SurroundDelayMs = _delay, DedicatedSub = _dedicatedSub,
             LfeCrossoverHz = _lfeXover, LfeLevelDb = _lfeLevel, MasterDb = _masterDb,
@@ -1153,6 +1228,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     /// output is re-opened only when something that needs it actually changes.</summary>
     public async Task<bool> ApplyProfileAsync(Profile p, string? switchToDeviceId)
     {
+        _applyingProfile = true;   // the footer save icon waits until the new state is loaded
+        try { return await ApplyProfileCoreAsync(p, switchToDeviceId); }
+        finally
+        {
+            _applyingProfile = false;
+            UpdateProfileDirty();
+        }
+    }
+
+    private async Task<bool> ApplyProfileCoreAsync(Profile p, string? switchToDeviceId)
+    {
         var cmds = ProfileStore.ChangedCommands(p, CaptureCurrent("current"), switchToDeviceId);
         var err = await ProfileStore.SendAsync(_client, cmds);
         if (err != null)
@@ -1164,6 +1250,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         ActiveProfileName = p.Name;
         _settings.Settings.LastProfile = p.Name;
         _settings.Save();
+        _profileBaseline = null;   // re-taken after the state below is loaded
         var where = switchToDeviceId != null ? $" and switched the output to {p.DeviceName}"
                   : p.HasDevice && !string.Equals(p.DeviceId, _selectedOutput?.Id, StringComparison.OrdinalIgnoreCase)
                       ? $" to {_selectedOutput?.Name ?? "the current output"}" : string.Empty;
@@ -1171,6 +1258,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         ProfilesChanged?.Invoke(this, EventArgs.Empty);
         if (switchToDeviceId != null) await LoadDevicesAsync();
         await LoadStateAsync();
+        ResetProfileBaseline();
         return true;
     }
 
@@ -1186,6 +1274,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _profiles.Upsert(updated);
         RefreshProfiles(updated.Name);
         ProfileStatus = $"Saved \"{updated.Name}\"";
+        if (string.Equals(updated.Name, _activeProfile, StringComparison.OrdinalIgnoreCase)) ResetProfileBaseline();
+        else UpdateProfileDirty();
     }
 
     private void SaveAsNewProfile()
@@ -1198,6 +1288,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         RefreshProfiles(p.Name);
         NewProfileName = string.Empty;
         ProfileStatus = p.HasDevice ? $"Saved \"{p.Name}\" for {p.DeviceName}" : $"Saved \"{p.Name}\"";
+        AfterProfileSaved(p.Name);   // v1.5.0: the new profile becomes the active one
     }
 
     private void DeleteSelectedProfile()
@@ -1210,6 +1301,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             _settings.Settings.LastProfile = null;
             _settings.Save();
             ActiveProfileName = null;
+            ResetProfileBaseline();
         }
         RefreshProfiles(null);
         ProfileStatus = $"Deleted \"{sel.Name}\"";
@@ -1299,6 +1391,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             notes.Add(pd.Message);
         }
         if (notes.Count > 0) ProfileStatus = string.Join(" ", notes);
+        _profileBaseline ??= ProfileStore.Commands(CaptureCurrent("current"), null);
     }
 
     // ===================================================================== telemetry tick (UI thread, 30 Hz)
@@ -1384,11 +1477,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 OutputMeters[i].PeakDb = t.EmitPeakDb[i];
                 OutputMeters[i].RmsDb = t.EmitRmsDb[i];
             }
-            bool noSub = !t.HasFlag2(TelemetryFlags2.DedicatedSub);
+            bool noLfeOut = t.HasFlag2(TelemetryFlags2.NoLfeOutput);
             for (int i = 0; i < 6; i++)
             {
                 var ch = Channels[i];
-                bool foldedLfe = noSub && i == 3;   // no subwoofer: show what is folded into the fronts
+                bool foldedLfe = noLfeOut && i == 3;   // no LFE output: show the source LFE (folded or discarded)
                 ch.PeakDb = foldedLfe ? t.LfeFoldPeakDb : t.OutPeakDb[i];
                 ch.RmsDb = foldedLfe ? t.LfeFoldRmsDb : t.OutRmsDb[i];
                 ch.IsActive = t.OutChannels != 2 || i < 2 || (TestSignalKind)t.TestSignal != TestSignalKind.Off;
@@ -1468,6 +1561,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void UpdateV12(in TelemetryBlock t, TelemetryFlags flags)
     {
         bool running = !IsAudioStopped && (EngineState)t.EngineState is EngineState.Running or EngineState.Idle;
+        bool lfeOut = !t.HasFlag2(TelemetryFlags2.NoLfeOutput);
         ProcessingText = !running ? (IsAudioStopped ? "Audio pipeline stopped" : "-") : t.ProcessingTextValue;
         PcmSwitchText = running ? t.PcmSwitchTextValue : string.Empty;
         OutputIsPassthrough = running && t.EmitChannels == 0 && flags.HasFlag(TelemetryFlags.Passthrough);
@@ -1492,10 +1586,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             LfeStatusKind.Source => GoodBrush,
             LfeStatusKind.Generated or LfeStatusKind.Upmixed => InfoBrush,
-            LfeStatusKind.Inhibited => WarnBrush,
+            LfeStatusKind.Inhibited or LfeStatusKind.Dropped => WarnBrush,
             _ => IdleBrush,
         };
-        var layout = running ? OutputLayout(t.EmitMask, t.EmitChannels, t.HasFlag2(TelemetryFlags2.DedicatedSub)) : string.Empty;
+        var layout = running ? OutputLayout(t.EmitMask, t.EmitChannels, lfeOut) : string.Empty;
         if (running && t.EmitChannels == 0 && flags.HasFlag(TelemetryFlags.Passthrough)) layout = "passthrough";
         if (layout != _outputLayout)
         {
@@ -1563,15 +1657,18 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             if ((mask & (1u << bit)) != 0) names.Add(SpeakerNames[bit]);
         OutputMeters.Clear();
         for (int i = 0; i < 8; i++)
-            OutputMeters.Add(new InputMeterViewModel(i < names.Count ? names[i] : i < channels ? OutNames71[i] : "-")
-            {
-                IsPresent = i < channels && !(IsNoSub && i < names.Count && names[i] == "LFE"),
-            });
+        {
+            // Silent slots: the LFE without a subwoofer, and the back pair of a 7.1 device (the bus is 5.1).
+            var n = i < names.Count ? names[i] : i < channels ? OutNames71[i] : "-";
+            bool silent = (IsNoSub && n == "LFE") || (channels == 8 && n is "BL" or "BR");
+            OutputMeters.Add(new InputMeterViewModel(n) { IsPresent = i < channels && !silent });
+        }
     }
 
     // ===================================================================== game detection (Auto)
     private void OnGameTick()
     {
+        UpdateProfileDirty();   // v1.5.0: footer save icon (once a second is plenty)
         if (!IsConnected || _gaming?.Value != GamingKind.Auto)
         {
             if (_gameReported && IsConnected) ReportGame(false, string.Empty);
@@ -1635,18 +1732,149 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         return br;
     }
 
-    private static void Shell(string target)
+    // ===================================================================== log folder (v1.5.0)
+    /// <summary>Folder of AVREngine.log: %ProgramData%\LegacyAVR for the service, else %LOCALAPPDATA%\LegacyAVR.</summary>
+    public string LogFolder => Environment.ExpandEnvironmentVariables(
+        _reader.IsServiceMapping || _isServiceMode ? @"%ProgramData%\LegacyAVR" : @"%LOCALAPPDATA%\LegacyAVR");
+    public string LogFilePath => Path.Combine(LogFolder, "AVREngine.log");
+
+    /// <summary>Opens the log folder with AVREngine.log selected. A missing folder or a failure to
+    /// open Explorer is reported (message box + footer), never swallowed.</summary>
+    public bool OpenLogFolder()
     {
-        try { Process.Start(new ProcessStartInfo(target) { UseShellExecute = true }); }
-        catch (Exception) { /* nothing useful to do */ }
+        var folder = LogFolder;
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+        {
+            ReportError($"The log folder does not exist yet:\n{folder}\n\nIt is created when AVREngine starts for the first time. " +
+                        "Start the engine (or check that it is installed next to LegacyAVR.UI.exe) and try again.");
+            return false;
+        }
+        try
+        {
+            var log = Path.Combine(folder, "AVREngine.log");
+            var psi = File.Exists(log)
+                ? new ProcessStartInfo("explorer.exe", $"/select,\"{log}\"") { UseShellExecute = false }
+                : new ProcessStartInfo(folder) { UseShellExecute = true };
+            Process.Start(psi);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ReportError($"Could not open the log folder ({folder}):\n{ex.Message}");
+            return false;
+        }
     }
 
-    private static void SetAutostart(bool enable)
+    private void ReportError(string message)
     {
-        using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
-        if (key is null) return;
-        if (enable) key.SetValue("LegacyAVR", $"\"{Environment.ProcessPath}\" --minimized");
-        else key.DeleteValue("LegacyAVR", throwOnMissingValue: false);
+        LastCommandError = message.Replace('\n', ' ').Replace("  ", " ");
+        ShowError(message);
+    }
+
+    // ===================================================================== emergency reset (v1.5.0)
+    private void RequestEmergency(bool reopen)
+    {
+        var q = reopen
+            ? "Emergency reset: close LegacyAVR, force-stop every LegacyAVR engine process (AVREngine) and start LegacyAVR again?\n\n" +
+              "Use this when the engine or the dashboard stops responding. Audio stops for a few seconds. Your settings are kept."
+            : "Close LegacyAVR and force-stop every LegacyAVR engine process (AVREngine), without restarting?\n\n" +
+              "Audio stops until you start LegacyAVR again. Your settings are kept.";
+        if (_isServiceMode)
+            q += "\n\nThe engine runs as a Windows service: stopping it needs administrator rights. If it cannot be stopped " +
+                 "you are told, and it keeps running.";
+        if (!Confirm(q)) return;
+        _userShutdown = true;   // no auto-relaunch from this instance while it closes
+        EmergencyRequested?.Invoke(this, reopen);
+    }
+
+    // ===================================================================== profile quick save (v1.5.0)
+    private List<string>? _profileBaseline;   // settings when the last profile was applied / saved (no profile active)
+    private bool _applyingProfile;
+    private bool _isProfileDirty;
+    /// <summary>The settings differ from the active profile (or, with none, from when they were last applied or saved).</summary>
+    public bool IsProfileDirty { get => _isProfileDirty; private set { if (Set(ref _isProfileDirty, value)) OnPropertyChanged(nameof(QuickSaveTooltip)); } }
+
+    /// <summary>The active profile, if it belongs to the output selected now (or to any output).</summary>
+    public Profile? ActiveProfileForOutput
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(_activeProfile) || _profiles.Find(_activeProfile) is not { } p) return null;
+            var outId = _selectedOutput is { IsMissing: false } o ? o.Id : null;
+            return !p.HasDevice || string.Equals(p.DeviceId, outId, StringComparison.OrdinalIgnoreCase) ? p : null;
+        }
+    }
+
+    public string QuickSaveTooltip => ActiveProfileForOutput is { } p
+        ? $"Save the changes to \"{p.Name}\" (overwrites it)"
+        : "Save the current settings as a new profile for this output";
+
+    private void ResetProfileBaseline()
+    {
+        _profileBaseline = ProfileStore.Commands(CaptureCurrent("current"), null);
+        UpdateProfileDirty();
+    }
+
+    /// <summary>Re-evaluated every second (cheap) and after profile operations.</summary>
+    public void UpdateProfileDirty()
+    {
+        if (!_isConnected || !_startupDone || _launching || _applyingProfile) { IsProfileDirty = false; return; }
+        var current = CaptureCurrent("current");
+        IsProfileDirty = ActiveProfileForOutput is { } p
+            ? ProfileStore.ChangedCommands(p, current, null).Count > 0
+            : _profileBaseline is { } b && !ProfileStore.Commands(current, null).SequenceEqual(b);
+        OnPropertyChanged(nameof(QuickSaveTooltip));
+    }
+
+    private void QuickSaveProfile()
+    {
+        if (ActiveProfileForOutput is { } active)
+        {
+            var updated = CaptureCurrent(active.Name, active.Description);
+            _profiles.Upsert(updated);
+            ProfileStatus = $"Saved \"{updated.Name}\"";
+            AfterProfileSaved(updated.Name);
+            return;
+        }
+        var outName = _selectedOutput is { IsMissing: false } o ? o.Name : null;
+        var name = PromptForName(outName is null ? "Save as a new profile" : $"Save as a new profile for {outName}",
+                                 outName is null ? "My profile" : $"{outName} - my settings")?.Trim();
+        if (string.IsNullOrEmpty(name)) return;
+        if (_profiles.Find(name) is not null && !Confirm($"A profile called \"{name}\" already exists. Overwrite it?")) return;
+        var p = CaptureCurrent(name);
+        _profiles.Upsert(p);
+        ProfileStatus = p.HasDevice ? $"Saved \"{p.Name}\" for {p.DeviceName}" : $"Saved \"{p.Name}\"";
+        AfterProfileSaved(p.Name);
+    }
+
+    private void AfterProfileSaved(string name)
+    {
+        ActiveProfileName = name;
+        _settings.Settings.LastProfile = name;
+        _settings.Save();
+        RefreshProfiles(name);
+        ResetProfileBaseline();
+    }
+
+    private void Shell(string target)
+    {
+        try { Process.Start(new ProcessStartInfo(target) { UseShellExecute = true }); }
+        catch (Exception ex) { LastCommandError = $"Could not open {target}: {ex.Message}"; }
+    }
+
+    private void SetAutostart(bool enable)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
+            if (key is null) { LastCommandError = "Could not change \"Start with Windows\": the Run key is not accessible."; return; }
+            if (enable) key.SetValue("LegacyAVR", $"\"{Environment.ProcessPath}\" --minimized");
+            else key.DeleteValue("LegacyAVR", throwOnMissingValue: false);
+        }
+        catch (Exception ex)
+        {
+            LastCommandError = $"Could not change \"Start with Windows\": {ex.Message}";
+        }
     }
 
     public void Dispose()

@@ -25,6 +25,28 @@ disappeared from sound cards; LegacyAVR does the same job in software.
 
 ---
 
+## A personal note
+
+I built LegacyAVR for my own AVR setup and decided to share it in case it might be useful to someone else. Older
+AVRs can be a great way to enjoy high-quality audio on a budget, so it's a shame that Dolby Digital Live and DTS
+Connect support has largely disappeared from PCs. I hope this project helps people keep getting more out of the
+systems they already own.
+
+I'm not a professional programmer; my background is more as a tinkerer, with only knowledge of web development.
+I built this with help from Claude Code, bringing my audio knowledge to the process and testing it with my own
+setup. The stereo upmixing has worked nicely for my music so far, but I'm continuing to improve stability.
+Feedback and suggestions are very welcome.
+
+I was inspired by strepto42's [virtual-ac3-encoder](https://github.com/strepto42/virtual-ac3-encoder) - thank
+you for the inspiration. This isn't meant to compete with it; it's simply a different take. I use my AVR over
+HDMI ARC and wanted to explore features including Dolby Digital Plus compatibility.
+
+I've tried to include helpful diagnostics and plenty of options to let people tailor the audio to their setup.
+There's still room to polish the look and feel, but for now I'm focused on functionality and features. I'm
+sharing it because I thought it might help someone else, too.
+
+---
+
 ## Contents
 
 1. [Features](#features)
@@ -53,15 +75,21 @@ disappeared from sound cards; LegacyAVR does the same job in software.
 
 **Processing**
 - Stereo upmix (Dynamic 3.1 / 5.1, or 3.0 / 5.0 without a subwoofer). Real multichannel audio is never upmixed.
-- LFE generation for 5.0 / 7.0 sources, with a safeguard that stops it once a source uses its own LFE.
-- Bass management for setups without a subwoofer (LFE folded into the front speakers).
+- LFE generation for 5.0 / 7.0 sources (with a subwoofer), with a safeguard that stops it once a source uses its
+  own LFE.
+- Setups without a subwoofer: no LFE channel is generated or sent (3.0 / 5.0), and a source's own LFE is folded
+  into the front speakers (low-passed, -3 dB each, limiter-protected) - or discarded, if you prefer.
+  See [Channel layouts](#channel-layouts-and-the-subwoofer-switch).
 - Optional custom five-band parametric EQ per speaker, with click-free changes, automatic headroom against
   clipping and an "audition" mode.
 - Night Mode compression, safety limiter, Game Mode with full-screen game detection.
 
 **Dashboard (WPF)**
-- Live input/output meters, processing and LFE status, effective-output indicator.
-- Profiles that store every setting, with import/export and portable apply to another output.
+- Live input/output meters, processing and LFE status, effective-output and Custom EQ indicators.
+- Profiles that store every setting, with import/export, portable apply to another output and a one-click
+  footer save when settings change.
+- Selectable error messages with a one-click "Open log folder", and an emergency reset that force-stops the
+  engine and restarts the dashboard.
 - Diagnostics wizard (channel identification, levels, centre bleed, LFE, polarity).
 - Searchable Settings guide with the real controls built in; system-tray operation.
 
@@ -238,15 +266,50 @@ Run either the service **or** `AVREngine.exe`, not both; a global mutex enforces
 - Start **LegacyAVR** from the Start menu (or `LegacyAVR.UI.exe`); it starts the engine automatically. Closing the window sends it to the tray and
   encoding continues; use **Exit** in the tray menu to quit.
 - **Output & Profiles:** devices, format, bitrate, output mode, safety margin, and profiles (save, apply,
-  import, export).
-- **Upmixing & Bass:** stereo handling, upmix sliders, bass / subwoofer, custom EQ, LFE generation, Game Mode,
+  import, export). When the settings differ from the active profile a **Save** button appears in the footer:
+  it overwrites the active profile, or asks for a name and creates a new one for the selected output.
+- **Upmixing & Bass:** stereo handling, upmix sliders, bass / subwoofer, custom EQ, the LFE switch, Game Mode,
   Night Mode.
 - **Mixer:** per-speaker trims, mutes and the EQ button for each speaker.
-- **Diagnostics**, **Settings guide** (every setting explained, with its control), **Setup guide**, and
-  **Engine Settings** (start with Windows, engine controls, logs).
+- **Diagnostics**, **Settings guide** (every setting explained, with its control), **Engine Settings** (start
+  with Windows, engine controls, logs, emergency reset) and the **Setup guide** (last tab).
 
-Logs: `%LOCALAPPDATA%\LegacyAVR\AVREngine.log` (service: `%ProgramData%\LegacyAVR\`). Settings and profiles:
-`%APPDATA%\LegacyAVR\`.
+Defaults for a new installation: Game Mode off, *LFE generation while gaming* on (it only acts while Game Mode is
+active), dedicated subwoofer active. An existing configuration keeps its own settings when you upgrade.
+
+Logs: `%LOCALAPPDATA%\LegacyAVR\AVREngine.log` (service: `%ProgramData%\LegacyAVR\`); dashboard errors go to
+`LegacyAVR.UI.log` in the same folder. The red error banner's **Open log folder** button opens it, and its text
+can be selected and copied. Settings and profiles: `%APPDATA%\LegacyAVR\`.
+
+If the engine or the dashboard stops responding, **Engine Settings > Emergency reset** closes LegacyAVR,
+force-stops every engine process (`AVREngine`) and starts LegacyAVR again; the second button does the same
+without restarting. (An engine running as a Windows service needs administrator rights to stop - you are told if
+it keeps running.)
+
+### Channel layouts and the subwoofer switch
+
+LegacyAVR processes audio on an internal 5.1 bus. What actually leaves depends on the format:
+
+| Format | Layouts it can send | Without a subwoofer |
+|---|---|---|
+| Dolby Digital (AC-3) | 2.0, 3.0, 3.1, 5.0, 5.1 | 3.1 upmix → **3.0**, 5.1 → **5.0** |
+| Dolby Digital Plus (E-AC-3) | 2.0, 3.0, 3.1, 5.0, 5.1 | 3.1 upmix → **3.0**, 5.1 → **5.0** |
+| DTS (FFmpeg encoder) | 2.0, 5.0, 5.1 - no 3.x layout | 5.1 → **5.0**; a 3.0 upmix travels in a 5.0 stream with silent surrounds (the live indicator says so) |
+| PCM | the device's format (2.0, 5.1 or 7.1) | the LFE slot of a 5.1 / 7.1 format stays silent |
+
+- **"Dedicated subwoofer" inactive:** LegacyAVR never generates an LFE channel. 3.0, 5.0 and 7.0 sources stay
+  without one; the Dynamic upmixes become 3.0 / 5.0. An LFE that the *source* already has (5.1 / 7.1 films and
+  games) is **not thrown away**: the LFE switch folds it into the front left and right speakers (120 Hz low-pass,
+  -3 dB per speaker so its power is kept, safety limiter against clipping). Set the switch to *Off* to discard
+  it instead - the LFE indicator then says "discarded". The LFE trim on the Mixer sets how loud the folded bass is.
+- **"Dedicated subwoofer" active:** the same switch controls LFE generation (Auto / Always / Off) for sources
+  without an LFE.
+- **7.0 / 7.1:** cannot be sent as seven discrete channels. The internal bus and these encoders (AC-3, E-AC-3
+  and DTS in FFmpeg) stop at 5.1, so 7.x sources are folded to 5.x (side and back speakers combined at -3 dB)
+  and shown as "7.1 → 5.0 fold-down" (or 5.1 with a subwoofer). A 7.1 PCM device receives 5.x with a silent
+  back pair, and the dashboard labels it that way.
+- **PCM 2.0** has no LFE channel either: the source's LFE is folded into L/R before the stereo downmix, and
+  nothing is generated.
 
 ---
 
@@ -278,6 +341,8 @@ Logs: `%LOCALAPPDATA%\LegacyAVR\AVREngine.log` (service: `%ProgramData%\LegacyAV
 | Short silence when changing settings | Normal: format, bitrate, mode, margin, device and subwoofer changes re-open the output and the AVR re-syncs for about a second. |
 | LegacyAVR does not start after installing | The .NET 10 Desktop Runtime or Visual C++ Redistributable (x64) is missing: run Setup again and let it install them, or use the links in [Requirements](#requirements). |
 | Pre-encoded audio not passed through | The cable must be 48 kHz, Windows volume 100 %, no enhancements, so the bits arrive untouched. |
+| Engine or dashboard not responding | *Engine Settings > Emergency reset*. Then check the log (**Open log folder** in the red banner or in Engine Settings). |
+| No bass without a subwoofer | Is the LFE switch on *Fold the source's LFE into front L/R*? Only sources with their own LFE have any to fold; without a subwoofer nothing is generated. |
 
 The in-app **Settings guide** covers every setting and readout in more detail.
 

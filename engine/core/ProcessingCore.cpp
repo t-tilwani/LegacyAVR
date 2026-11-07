@@ -60,6 +60,7 @@ bool ProcessingCore::configure(const CoreConfig& cfg, LiveParams& params,
 
     encMain_.close();
     enc2_.close();
+    enc3_.close();
     encIec_ = IecType::None;
     if (cfg.bitstream()) {
         const int mainCh = cfg.dedicatedSub ? 6 : 5;
@@ -70,6 +71,15 @@ bool ProcessingCore::configure(const CoreConfig& cfg, LiveParams& params,
             error.clear();
         }
         if (!enc2_.open(cfg.codec, cfg.bitrate, 2, error)) return false;
+        // v1.5.0: real 3.1 / 3.0 for the stereo -> 3.x upmix where the codec has the layout
+        // (AC-3 / E-AC-3). DTS has none: the 3.x upmix then travels in the 5.x stream with
+        // silent surrounds (and the dashboard says so). Optional - a failure keeps encMain_.
+        const int threeCh = cfg.dedicatedSub ? 4 : 3;
+        if (AudioEncoder::supportsChannels(cfg.codec, threeCh)) {
+            std::string e3;
+            if (!enc3_.open(cfg.codec, cfg.bitrate, threeCh, e3) || enc3_.iecType() != encMain_.iecType())
+                enc3_.close();
+        }
         encIec_ = encMain_.iecType();
         outBytesPerFrame_ = iecBurstBytes(encIec_) / encMain_.codecFrameSamples();
         if (encIec_ == IecType::EAC3) outBytesPerFrame_ = iecBurstBytes(encIec_) / kBlockFrames;
@@ -473,7 +483,7 @@ void ProcessingCore::processBlock(float* const* planes, bool stereoContent, bool
     const bool gaming = params_->gamingActive.load(std::memory_order_relaxed);
     // v1.3.0: Game Mode's own LFE toggle forces generation on (Always semantics) while a
     // game is active and overrides the general setting; otherwise the general mode applies.
-    const bool gameForce = gaming && params_->gameLfeGen.load(std::memory_order_relaxed);
+    const bool gameForce = gaming && cfg_.lfeOutput() && params_->gameLfeGen.load(std::memory_order_relaxed);
     const auto lfeMode = gameForce ? LfeGenMode::Always
                                    : static_cast<LfeGenMode>(params_->lfeGenMode.load(std::memory_order_relaxed));
     // Native-LFE latch: suppresses Auto and game-forced generation (the user's general
@@ -482,7 +492,10 @@ void ProcessingCore::processBlock(float* const* planes, bool stereoContent, bool
     const bool latchApplies = latch && (gameForce || lfeMode == LfeGenMode::Auto);
     bool inhibitedNow = false;
     bool upmixedLfe = false;
-    const bool noSub = !cfg_.dedicatedSub;
+    // v1.5.0: no LFE channel in the output (no dedicated subwoofer, or PCM 2.0): nothing is
+    // generated; the source's own LFE is folded into the fronts or discarded (LFE fold switch).
+    const bool lfeOut = cfg_.lfeOutput();
+    const bool lfeFold = params_->lfeFold.load(std::memory_order_relaxed);
     // PcmDirect behaves like Passthrough inside the DSP (no upmix); the switch to a PCM
     // 2.0 output is done by the host when updateOutputRequest() asks for it.
     const bool pcmDirect = rawMode == UpmixMode::PcmDirect;
@@ -492,6 +505,7 @@ void ProcessingCore::processBlock(float* const* planes, bool stereoContent, bool
     if (gaming) mode = UpmixMode::Passthrough;
 
     bool twoCh = false;
+    bool threeCh = false;
     bool genEnable = false;
     auto ps = ProcessingState::Idle;
     if (test != TestSignal::Off) {
@@ -502,15 +516,17 @@ void ProcessingCore::processBlock(float* const* planes, bool stereoContent, bool
         if (stereoContent) {
             upmixer_.process(planes, kBlockFrames, mode);
             const bool upmixed = mode != UpmixMode::Passthrough;
-            // Without a subwoofer the upmixer's LFE would only duplicate the bass the
-            // front speakers already play: drop it.
-            if (upmixed && noSub) std::memset(planes[LFE], 0, kBlockFrames * sizeof(float));
-            upmixedLfe = upmixed && !noSub;
+            // Without an LFE output the upmixer's LFE would only duplicate the bass the
+            // front speakers already play: drop it (3.1 -> 3.0, 5.1 -> 5.0).
+            if (upmixed && !lfeOut) std::memset(planes[LFE], 0, kBlockFrames * sizeof(float));
+            upmixedLfe = upmixed && lfeOut;
             // "Always" LFE generation also covers stereo that is kept as stereo (2.0 -> 2.1).
-            genEnable = !upmixed && lfeMode == LfeGenMode::Always && !pcmDirect && !noSub;
+            genEnable = !upmixed && lfeMode == LfeGenMode::Always && !pcmDirect && lfeOut;
             if (genEnable && latchApplies) { genEnable = false; inhibitedNow = true; }
             const bool keep20 = !gaming && (pcmDirect || params_->stereoAsTwoChannel.load(std::memory_order_relaxed));
             twoCh = !upmixed && keep20 && !genEnable && bass_.generatorGain() <= 0.0f;
+            // Stereo -> 3.x: the 3-channel encoder (surrounds are silent in this mode).
+            threeCh = upmixed && mode == UpmixMode::Upmix31 && enc3_.isOpen() && bass_.generatorGain() <= 0.0f;
             ps = upmixed ? (mode == UpmixMode::Upmix51 ? ProcessingState::StereoUpmix51 : ProcessingState::StereoUpmix31)
                  : cfg_.stereoPcmOverride ? ProcessingState::StereoPcm
                  : genEnable              ? ProcessingState::StereoLfeGen
@@ -520,7 +536,7 @@ void ProcessingCore::processBlock(float* const* planes, bool stereoContent, bool
             const uint32_t mask = stats.contentMask.load(std::memory_order_relaxed);
             const bool hasLfe = (mask & SPK_LFE) != 0;
             const bool confirmed = multiSinceUs_ != 0 && nowUs_ - multiSinceUs_ >= kLfeGenConfirmUs;
-            genEnable = !hasLfe && (lfeMode == LfeGenMode::Always || (lfeMode == LfeGenMode::Auto && confirmed));
+            genEnable = lfeOut && !hasLfe && (lfeMode == LfeGenMode::Always || (lfeMode == LfeGenMode::Auto && confirmed));
             if (genEnable && latchApplies) { genEnable = false; inhibitedNow = true; }
             const bool fold71 = (mask & (SPK_BL | SPK_BR)) != 0 && (mask & (SPK_SL | SPK_SR)) != 0;
             ps = fold71 ? (genEnable ? ProcessingState::FoldDown71LfeGen : ProcessingState::FoldDown71)
@@ -529,7 +545,7 @@ void ProcessingCore::processBlock(float* const* planes, bool stereoContent, bool
     }
 
     // LFE generation (ramped; runs on while fading out after it was disabled).
-    if (genEnable || bass_.generatorGain() > 0.0f) bass_.generateLfe(planes, kBlockFrames, genEnable, noSub);
+    if (genEnable || bass_.generatorGain() > 0.0f) bass_.generateLfe(planes, kBlockFrames, genEnable);
     stats.lfeGenGain.store(bass_.generatorGain(), std::memory_order_relaxed);
 
     // Bass control (not on test signals: calibration must stay flat). v1.4.0: the custom EQ
@@ -556,10 +572,13 @@ void ProcessingCore::processBlock(float* const* planes, bool stereoContent, bool
 
     applyGains(planes);
 
-    // No subwoofer: the (trimmed) LFE goes to the front speakers.
-    if (noSub) {
+    // No LFE output: the (trimmed) source LFE is folded into the front speakers - low-passed,
+    // -3 dB each, ramped - or discarded when the LFE fold switch is off. Never silently: the
+    // meter shows the LFE level either way and the status says which. The limiter below keeps
+    // the result under the ceiling.
+    if (!lfeOut) {
         lfeFoldMeter.analyse(&planes[LFE], 1, kBlockFrames);
-        BassManager::foldLfeIntoFronts(planes, kBlockFrames);
+        bass_.foldLfeIntoFronts(planes, kBlockFrames, lfeFold);
     }
 
     const bool night = params_->nightMode.load(std::memory_order_relaxed) && test == TestSignal::Off;
@@ -578,21 +597,26 @@ void ProcessingCore::processBlock(float* const* planes, bool stereoContent, bool
         blockDropped_ = true;
         stats.outputOverruns.fetch_add(1, std::memory_order_relaxed);
     } else if (cfg_.bitstream()) {
-        AudioEncoder& enc = twoCh ? enc2_ : encMain_;
+        AudioEncoder& enc = twoCh ? enc2_ : threeCh ? enc3_ : encMain_;
         stats.encoderChannels.store(uint32_t(enc.channels()), std::memory_order_relaxed);
         if (!enc.encodeBlock(planes, &ProcessingCore::onPacket, this))
             stats.encoderErrors.fetch_add(1, std::memory_order_relaxed);
         // Output visualiser: exactly the channels inside the bitstream.
-        if (enc.channels() == 2) {
-            emitMeters.analyse(planes, 2, kBlockFrames);
-            stats.emitMask.store(kMaskStereo, std::memory_order_relaxed);
-        } else if (enc.channels() == 5) {
+        const int ec = enc.channels();
+        if (ec == 5) {
             const std::array<const float*, 5> ep{planes[FL], planes[FR], planes[FC], planes[SL], planes[SR]};
             emitMeters.analyse(ep.data(), 5, kBlockFrames);
             stats.emitMask.store(SPK_FL | SPK_FR | SPK_FC | SPK_SL | SPK_SR, std::memory_order_relaxed);
         } else {
-            emitMeters.analyse(planes, 6, kBlockFrames);
-            stats.emitMask.store(kMask51Side, std::memory_order_relaxed);
+            // 2, 3, 4 and 6 channels are a prefix of the bus order (FL FR FC LFE SL SR).
+            // emitMask is the slot layout (meter labels follow it); a silent LFE slot - 5.0
+            // refused by the encoder build - is labelled by the host / UI from dedicatedSub.
+            emitMeters.analyse(planes, size_t(ec), kBlockFrames);
+            const uint32_t m = ec == 2 ? kMaskStereo
+                             : ec == 3 ? (SPK_FL | SPK_FR | SPK_FC)
+                             : ec == 4 ? (SPK_FL | SPK_FR | SPK_FC | SPK_LFE)
+                                       : kMask51Side;
+            stats.emitMask.store(m, std::memory_order_relaxed);
         }
         stats.emitChannels.store(uint32_t(enc.channels()), std::memory_order_relaxed);
     } else {
@@ -607,7 +631,7 @@ void ProcessingCore::processBlock(float* const* planes, bool stereoContent, bool
         const bool sourceLfe = !stereoContent && (stats.contentMask.load(std::memory_order_relaxed) & SPK_LFE) != 0;
         if (test != TestSignal::Off) ls = LfeStatus::TestSignal;
         else if (bass_.generatorGain() > 0.0f) ls = LfeStatus::Generated;
-        else if (sourceLfe) ls = LfeStatus::Source;
+        else if (sourceLfe) ls = (lfeOut || lfeFold) ? LfeStatus::Source : LfeStatus::Dropped;
         else if (upmixedLfe) ls = LfeStatus::Upmixed;
         else if (inhibitedNow) ls = LfeStatus::Inhibited;
         stats.lfeStatus.store(static_cast<uint32_t>(ls), std::memory_order_relaxed);
@@ -649,13 +673,15 @@ void ProcessingCore::emitPcm(float* const* planes, bool twoChannelContent) noexc
     } else if (oc == 6) {      // device 5.1: FL FR FC LFE BL/SL BR/SR
         for (size_t i = 0; i < kBlockFrames; ++i)
             for (size_t c = 0; c < 6; ++c) o[6 * i + c] = planes[c][i];
-        mask = kMask51Side;
+        mask = kMask51Side;    // slot layout; without a subwoofer the LFE slot is silent
     } else {                   // device 7.1: FL FR FC LFE BL BR SL SR -> surrounds on the side pair
         for (size_t i = 0; i < kBlockFrames; ++i) {
             float* f = o + 8 * i;
             f[0] = planes[FL][i]; f[1] = planes[FR][i]; f[2] = planes[FC][i]; f[3] = planes[LFE][i];
             f[4] = 0.0f; f[5] = 0.0f; f[6] = planes[SL][i]; f[7] = planes[SR][i];
         }
+        // Slot layout. The bus is 5.1, so the back pair of a 7.1 device stays silent (7.x
+        // sources are folded to 5.x by the matrix) - the host / UI label says so.
         mask = kMask71;
     }
     emitMeters.analyseInterleaved(o, oc, kBlockFrames, kBusRate);

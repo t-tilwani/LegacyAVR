@@ -18,7 +18,7 @@
     <RootNamespace>LegacyAVR.UI</RootNamespace>
     <AssemblyName>LegacyAVR.UI</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
     <Product>LegacyAVR</Product>
     <Description>LegacyAVR control panel</Description>
     <!-- Same output folder as AVREngine.exe so the UI can launch the engine. -->

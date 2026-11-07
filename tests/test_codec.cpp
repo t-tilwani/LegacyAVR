@@ -18,6 +18,7 @@ extern "C" {
 #include <cstdio>
 #include <string>
 #include <numbers>
+#include <utility>
 #include <vector>
 
 using namespace avr;
@@ -635,8 +636,9 @@ struct FeatureRig {
     std::vector<uint8_t> drain;
     double ph = 0, phBass = 0;
     uint64_t now = 0;
+    float amp = 0.25f, bassAmp = 0.25f;   // tone levels (v1.5.0: the clipping tests drive full scale)
 
-    bool configure(bool dedicatedSub = true, Codec codec = Codec::AC3) {
+    bool configure(bool dedicatedSub = true, Codec codec = Codec::AC3, uint16_t pcmChannels = 6) {
         in.allocate(8 * 48000);
         out.allocate(16 * 48000);
         drain.assign(out.capacity(), 0);
@@ -645,7 +647,7 @@ struct FeatureRig {
         cfg.inChannels = 8;
         cfg.inMask = kMask71;
         cfg.codec = codec;
-        cfg.pcmChannels = 6;
+        cfg.pcmChannels = pcmChannels;
         cfg.dedicatedSub = dedicatedSub;
         std::string err;
         return core.configure(cfg, params, in, out, err);
@@ -655,8 +657,8 @@ struct FeatureRig {
     void run(int ms, uint32_t channelMask, uint32_t bassMask = 0) {
         for (int t = 0; t < ms; t += 10) {
             for (size_t i = 0; i < 480; ++i) {
-                const float v = 0.25f * float(std::sin(ph));
-                const float b = 0.25f * float(std::sin(phBass));
+                const float v = amp * float(std::sin(ph));
+                const float b = bassAmp * float(std::sin(phBass));
                 ph += 2 * std::numbers::pi * 1000.0 / 48000.0;
                 phBass += 2 * std::numbers::pi * 50.0 / 48000.0;
                 for (size_t ch = 0; ch < 8; ++ch)
@@ -684,6 +686,7 @@ TEST(Features, NoSubwoofer_EncodesFiveChannelsAndFoldsLfe) {
     CHECK((rig.core.stats.emitMask.load() & SPK_LFE) == 0);
     CHECK(rig.outRmsDb(LFE) < -90.0f);                     // nothing left on the LFE plane
     CHECK(linToDb(rig.core.lfeFoldMeter.rms(0)) > -30.0f);  // ...because it went to the fronts
+    CHECK(static_cast<LfeStatus>(rig.core.stats.lfeStatus.load()) == LfeStatus::Source);
 }
 
 TEST(Features, LfeGeneration_AutoWaitsForConfirmed50Source) {
@@ -970,6 +973,184 @@ TEST(GameLfe, RespectsNativeLfeInhibit) {
     rig.params.gameLfeGen = false;                               // toggle off: general setting (Off)
     rig.run(500, k51QuietLfe);
     CHECK(lfeStatusOf(rig) == LfeStatus::None);
+}
+
+// ===========================================================================
+// v1.5.0 - no-subwoofer layouts, LFE fold, 3.0 / 3.1 encoding
+namespace {
+// Encodes `blocks` blocks with a tone on bus plane `toneCh` and decodes them with FFmpeg's
+// decoder; returns the decoded channel count and the loudest decoded channel.
+std::pair<int, size_t> decodeLoudest(Codec codec, int channels, size_t toneCh) {
+    AudioEncoder e;
+    std::string err;
+    CHECK(e.open(codec, 640000, channels, err));
+    CHECK_EQ(e.channels(), channels);
+    const AVCodec* dc = avcodec_find_decoder_by_name("ac3");
+    AVCodecContext* d = avcodec_alloc_context3(dc);
+    CHECK(avcodec_open2(d, dc, nullptr) == 0);
+    AVPacket* pkt = av_packet_alloc();
+    AVFrame* fr = av_frame_alloc();
+    Planes p;
+    double ph = 0;
+    std::array<double, 8> energy{};
+    int decodedChannels = 0;
+    for (int blk = 0; blk < 10; ++blk) {
+        p.tone(toneCh, toneCh == LFE ? 50.0 : 1000.0, ph);
+        Collected c;
+        CHECK(e.encodeBlock(p.ptr.data(), &Collected::sink, &c));
+        for (auto& data : c.packets) {
+            av_new_packet(pkt, int(data.size()));
+            std::copy(data.begin(), data.end(), pkt->data);
+            if (avcodec_send_packet(d, pkt) == 0) {
+                while (avcodec_receive_frame(d, fr) == 0) {
+                    decodedChannels = fr->ch_layout.nb_channels;
+                    if (blk < 3) continue;
+                    for (int k = 0; k < decodedChannels && k < 8; ++k) {
+                        const auto* s = reinterpret_cast<const float*>(fr->extended_data[k]);
+                        for (int i = 0; i < fr->nb_samples; ++i) energy[size_t(k)] += double(s[i]) * s[i];
+                    }
+                }
+            }
+            av_packet_unref(pkt);
+        }
+    }
+    size_t best = 0;
+    for (size_t k = 1; k < energy.size(); ++k) if (energy[k] > energy[best]) best = k;
+    av_frame_free(&fr);
+    av_packet_free(&pkt);
+    avcodec_free_context(&d);
+    return {decodedChannels, best};
+}
+} // namespace
+
+TEST(Mapping, Ac3ThreeChannelLayouts) {
+    CHECK(!AudioEncoder::supportsChannels(Codec::DTS, 3));   // FFmpeg dca has no 3.x layout
+    CHECK(AudioEncoder::supportsChannels(Codec::AC3, 3) && AudioEncoder::supportsChannels(Codec::EAC3, 4));
+    auto [n30, c30] = decodeLoudest(Codec::AC3, 3, FC);       // 3.0: FL FR FC
+    CHECK_EQ(n30, 3);
+    CHECK_EQ(c30, size_t(2));
+    auto [n31, c31] = decodeLoudest(Codec::AC3, 4, LFE);      // 3.1: FL FR FC LFE
+    CHECK_EQ(n31, 4);
+    CHECK_EQ(c31, size_t(3));
+    std::string err;
+    for (int ch : {3, 4}) {                                    // E-AC-3 opens the same layouts
+        AudioEncoder e;
+        CHECK(e.open(Codec::EAC3, 640000, ch, err));
+        CHECK_EQ(e.channels(), ch);
+    }
+    AudioEncoder dts;
+    CHECK(!dts.open(Codec::DTS, 1509750, 3, err));           // refused, with a reason
+    CHECK(!err.empty());
+}
+
+TEST(NoSub, StereoUpmix31EncodesThreeZero) {
+    FeatureRig rig;
+    rig.params.upmixMode = static_cast<uint32_t>(UpmixMode::Upmix31);
+    CHECK(rig.configure(false));
+    rig.run(1500, 0b11);
+    CHECK(procOf(rig) == ProcessingState::StereoUpmix31);
+    CHECK_EQ(rig.core.stats.encoderChannels.load(), 3u);     // real 3.0 - no .1
+    CHECK_EQ(rig.core.stats.emitMask.load(), uint32_t(SPK_FL | SPK_FR | SPK_FC));
+    CHECK(rig.outRmsDb(LFE) < -90.0f);
+    CHECK(rig.outRmsDb(FC) > -40.0f);
+}
+
+TEST(NoSub, WithSubwooferStereoUpmix31EncodesThreeOne) {
+    FeatureRig rig;
+    rig.params.upmixMode = static_cast<uint32_t>(UpmixMode::Upmix31);
+    CHECK(rig.configure(true));
+    rig.run(1500, 0b11, 0b11);
+    CHECK(procOf(rig) == ProcessingState::StereoUpmix31);
+    CHECK_EQ(rig.core.stats.encoderChannels.load(), 4u);     // 3.1
+    CHECK((rig.core.stats.emitMask.load() & SPK_LFE) != 0);
+    CHECK(rig.outRmsDb(LFE) > -50.0f);
+    rig.run(2500, k51WithLfe);                               // 5.1 source: back to the 5.1 encoder
+    CHECK_EQ(rig.core.stats.encoderChannels.load(), 6u);
+}
+
+TEST(NoSub, DtsCarriesThreeZeroInFiveZero) {
+    FeatureRig rig;
+    rig.params.upmixMode = static_cast<uint32_t>(UpmixMode::Upmix31);
+    CHECK(rig.configure(false, Codec::DTS));
+    rig.run(1500, 0b11);
+    CHECK(procOf(rig) == ProcessingState::StereoUpmix31);
+    const uint32_t ch = rig.core.stats.encoderChannels.load();
+    CHECK(ch == 5u || ch == 6u);                             // DTS: 5.x container (no 3.x layout), surrounds silent
+    CHECK(rig.outRmsDb(SL) < -90.0f && rig.outRmsDb(SR) < -90.0f);
+    CHECK(rig.outRmsDb(LFE) < -90.0f);
+}
+
+TEST(NoSub, NeverGeneratesLfe) {
+    // Every generation path - Always, Auto on a confirmed 5.0 source, Game Mode's toggle.
+    FeatureRig rig;
+    rig.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Always);
+    rig.params.gameLfeGen = true;
+    rig.params.gamingActive = true;
+    rig.params.upmixMode = static_cast<uint32_t>(UpmixMode::Passthrough);
+    CHECK(rig.configure(false));
+    rig.run(5000, k51QuietLfe, 0b100);                       // 5.0 with bass in the centre
+    CHECK(procOf(rig) == ProcessingState::Discrete);
+    CHECK(rig.core.stats.lfeGenGain.load() == 0.0f);
+    CHECK(!rig.core.stats.lfeGameOverride.load());
+    CHECK(lfeStatusOf(rig) == LfeStatus::None);
+    CHECK_EQ(rig.core.stats.encoderChannels.load(), 5u);     // 5.0 stays 5.0
+    rig.params.gamingActive = false;
+    rig.run(2500, 0b11, 0b11);                               // stereo: no 2.0 -> 2.1 either
+    CHECK(procOf(rig) == ProcessingState::StereoKept);
+    CHECK(rig.core.stats.lfeGenGain.load() == 0.0f);
+    CHECK(rig.outRmsDb(LFE) < -90.0f);
+}
+
+TEST(NoSub, SourceLfeIsFoldedNotLost) {
+    // 5.1 with bass only on its LFE: folded, the fronts carry it; fold off: discarded and said so.
+    FeatureRig fold, drop;
+    fold.params.upmixMode = drop.params.upmixMode = static_cast<uint32_t>(UpmixMode::Passthrough);
+    drop.params.lfeFold = false;
+    CHECK(fold.configure(false));
+    CHECK(drop.configure(false));
+    fold.run(2500, 0b11000111, 0b1000);
+    drop.run(2500, 0b11000111, 0b1000);
+    CHECK(lfeStatusOf(fold) == LfeStatus::Source);
+    CHECK(lfeStatusOf(drop) == LfeStatus::Dropped);
+    // Folded bass adds to the fronts (1 kHz + 50 Hz at the same level -> about +1.6 dB rms with
+    // the -3 dB fold); discarded leaves the 1 kHz tone alone.
+    CHECK(fold.outRmsDb(FL) > drop.outRmsDb(FL) + 1.0f);
+    CHECK(fold.outRmsDb(LFE) < -90.0f && drop.outRmsDb(LFE) < -90.0f);
+    CHECK(linToDb(drop.core.lfeFoldMeter.rms(0)) > -30.0f);  // the meter shows what is discarded
+    // Switching the fold on is live (no restart).
+    drop.params.lfeFold = true;
+    drop.run(1000, 0b11000111, 0b1000);
+    CHECK(lfeStatusOf(drop) == LfeStatus::Source);
+    CHECK(drop.outRmsDb(FL) > fold.outRmsDb(FL) - 0.5f);
+}
+
+TEST(NoSub, FullScaleFoldDoesNotClip) {
+    // Full-scale fronts plus a full-scale LFE: the limiter keeps every sample under the ceiling.
+    FeatureRig rig;
+    rig.amp = 0.99f;
+    rig.bassAmp = 0.99f;
+    rig.params.upmixMode = static_cast<uint32_t>(UpmixMode::Passthrough);
+    CHECK(rig.configure(false));
+    rig.run(2500, 0b11000111, 0b1011);                       // 50 Hz on FL, FR and the LFE as well
+    const float ceiling = dbToLin(-0.3f) * 1.001f;
+    for (size_t c : {size_t(FL), size_t(FR), size_t(FC), size_t(SL), size_t(SR)})
+        CHECK(rig.core.outputMeters.peak(c) <= ceiling);
+    CHECK(rig.core.stats.limiterGrDb.load() < 0.0f);         // the limiter did work
+    CHECK(rig.outRmsDb(FL) > -12.0f);                        // ...without gutting the level
+}
+
+TEST(NoSub, Pcm20FoldsLfeEvenWithASubwoofer) {
+    // PCM 2.0 has no LFE channel: the LFE is folded before the stereo downmix, not dropped,
+    // and nothing is generated into a channel that does not exist.
+    FeatureRig rig;
+    rig.params.upmixMode = static_cast<uint32_t>(UpmixMode::Passthrough);
+    rig.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Always);
+    CHECK(rig.configure(true, Codec::PCM, 2));
+    rig.run(2500, 0b11000111, 0b1000);
+    CHECK(lfeStatusOf(rig) == LfeStatus::Source);
+    CHECK(rig.core.stats.lfeGenGain.load() == 0.0f);
+    CHECK_EQ(rig.core.stats.emitChannels.load(), 2u);
+    CHECK(linToDb(rig.core.lfeFoldMeter.rms(0)) > -30.0f);
 }
 
 // ===========================================================================

@@ -36,6 +36,14 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
+        // v1.5.0: an unexpected error in a button handler is reported (and logged) instead of
+        // closing the dashboard without a word.
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+
+        // v1.5.0: started again by the emergency reset - let the old instance finish exiting first,
+        // so its single-instance lock is released.
+        EmergencyReset.WaitForPreviousInstance(e.Args);
+
         _instanceMutex = new Mutex(true, InstanceMutexName, out bool first);
         if (!first)
         {
@@ -75,6 +83,7 @@ public partial class App : System.Windows.Application
         _reader = new TelemetryReader();
         _vm = new MainViewModel(_client, _reader, _settings, _profiles);
         _vm.OpenEqRequested += (_, ch) => OpenEqDialog(ch);
+        _vm.EmergencyRequested += async (_, reopen) => await EmergencyExitAsync(reopen);
 
         _window = new MainWindow { DataContext = _vm };
         _window.Icon = IconFactory.CreateImageSource(64);
@@ -109,6 +118,17 @@ public partial class App : System.Windows.Application
         if (!startMinimized) _window.Show();
 
         await _vm.InitialiseAsync();
+    }
+
+    private void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+    {
+        var path = UiLog.Write(e.Exception);
+        e.Handled = true;
+        if (IsExiting) return;
+        MessageBox.Show("Something went wrong in the dashboard:\n" + e.Exception.Message +
+                        (path is null ? string.Empty : "\n\nDetails were written to " + path) +
+                        "\n\nLegacyAVR keeps running. If it misbehaves, use Engine Settings > Emergency reset.",
+                        "LegacyAVR", MessageBoxButton.OK, MessageBoxImage.Warning);
     }
 
     private static void OnComboBoxMouseWheel(object sender, MouseWheelEventArgs e)
@@ -164,6 +184,37 @@ public partial class App : System.Windows.Application
         _tray?.Dispose();
         _reader?.Dispose();
         _client?.Dispose();
+        _showEvent?.Set();
+        _window?.Close();
+        Shutdown();
+    }
+
+    /// <summary>
+    /// v1.5.0 emergency reset: close the dashboard, force-stop every engine process and, when
+    /// <paramref name="reopen"/>, start the dashboard again (it starts a fresh engine). Does not
+    /// depend on the engine answering: a polite SHUTDOWN gets one second, then the processes are killed.
+    /// </summary>
+    private async Task EmergencyExitAsync(bool reopen)
+    {
+        if (IsExiting) return;
+        IsExiting = true;
+        if (_vm?.IsServiceMode == false && _client != null)
+        {
+            try { await Task.WhenAny(_client.SendAsync("SHUTDOWN"), Task.Delay(1000)); }
+            catch (Exception) { /* the engine is not answering - it is killed below */ }
+        }
+        _eqWindow?.Close();
+        _vm?.Dispose();
+        _reader?.Dispose();
+        _client?.Dispose();
+
+        var problems = await Task.Run(() => EmergencyReset.StopEngines());
+        string? relaunchError = reopen ? EmergencyReset.RelaunchDashboard() : null;
+        var messages = problems.ToList();
+        if (relaunchError != null) messages.Add(relaunchError);
+        if (messages.Count > 0)
+            MessageBox.Show(string.Join("\n\n", messages), "LegacyAVR - emergency reset", MessageBoxButton.OK, MessageBoxImage.Warning);
+        _tray?.Dispose();
         _showEvent?.Set();
         _window?.Close();
         Shutdown();

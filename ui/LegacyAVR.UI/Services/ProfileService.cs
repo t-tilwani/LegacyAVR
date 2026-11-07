@@ -45,6 +45,9 @@ public sealed record Profile
     public GamingKind? Gaming { get; init; }
     public bool? GameLfeGen { get; init; }
     public double? LfeResetSeconds { get; init; }
+    /// <summary>v1.5.0: no subwoofer - fold the source's LFE into the fronts (true) or discard it.
+    /// Optional: profiles saved by 1.4 do not have it and stay complete (the setting is left as it is).</summary>
+    public bool? LfeFold { get; init; }
     public double? BassDb { get; init; }
     public double? CentreLevel { get; init; }
     public double? CentreFloor { get; init; }
@@ -129,13 +132,13 @@ public sealed class ProfileStore
     public static IReadOnlyList<Profile> Defaults { get; } = new[]
     {
         Partial("Dolby Digital 5.1 - 640 kbps", CodecKind.AC3, 640000, UpmixKind.Upmix51, false, LfeGenKind.Auto, 0,
-                "Works with almost every AVR, soundbar and TV (optical or HDMI ARC). Stereo is upmixed to 5.1, 5.0 sources get an LFE, games are left alone."),
+                "Works with almost every AVR, soundbar and TV (optical or HDMI ARC). Stereo is upmixed to 5.1 and 5.0 sources get an LFE (with a subwoofer)."),
         Partial("DTS 5.1 - 1509 kbps", CodecKind.DTS, 1509750, UpmixKind.Upmix51, false, LfeGenKind.Auto, 0,
                 "Highest-bitrate surround over optical. For receivers that decode DTS."),
         Partial("Dolby Digital Plus 5.1 - 1024 kbps (HDMI ARC)", CodecKind.EAC3, 1024000, UpmixKind.Upmix51, false, LfeGenKind.Auto, 0,
                 "Better quality than Dolby Digital, but only over HDMI ARC to devices that list DD+. Not possible over optical."),
         Partial("Stereo music: lossless PCM 2.0, DD 5.1 for games", CodecKind.AC3, 640000, UpmixKind.PcmDirect, false, LfeGenKind.Auto, 0,
-                "Stereo sources stay lossless PCM; switches to Dolby Digital 5.1 automatically when a game or film plays surround. Game mode keeps games on Dolby Digital."),
+                "Stereo sources stay lossless PCM; switches to Dolby Digital 5.1 automatically when a game or film plays surround. Turns game mode on (auto-detect) so games stay on Dolby Digital.") with { Gaming = GamingKind.Auto },
         Partial("Late night - Dolby Digital 5.1 + Night Mode", CodecKind.AC3, 448000, UpmixKind.Upmix51, true, LfeGenKind.Off, -4,
                 "Compresses loud effects and lifts dialogue so you can keep the volume low. Bass is turned down 4 dB."),
     };
@@ -144,7 +147,9 @@ public sealed class ProfileStore
         new()
         {
             Name = name, Description = desc, Codec = codec, Bitrate = bitrate, OutputMode = OutputModeKind.Exclusive, BufferMs = 0,
-            Upmix = upmix, StereoAs20 = true, NightMode = night, LfeGen = lfe, Gaming = GamingKind.Auto, BassDb = bass,
+            // v1.5.0: Gaming is not stored (null = left as it is; the system default is off) -
+            // only the profile that relies on game mode sets it.
+            Upmix = upmix, StereoAs20 = true, NightMode = night, LfeGen = lfe, BassDb = bass,
         };
 
     // ------------------------------------------------------------------ persistence
@@ -364,6 +369,7 @@ public sealed class ProfileStore
         if (p.Gaming is { } gm) c.Add($"SET_GAMING {GamingToken(gm)}");
         if (p.GameLfeGen is bool glfe) c.Add($"SET_GAME_LFE {(glfe ? 1 : 0)}");
         if (p.LfeResetSeconds is double reset) c.Add($"SET_LFE_RESET {F(FactoryDefaults.ClampLfeReset(reset))}");
+        if (p.LfeFold is bool fold) c.Add($"SET_LFE_FOLD {(fold ? 1 : 0)}");
         if (p.BassDb is double bass) c.Add($"SET_BASS {F(Math.Clamp(bass, -12, 12))}");
         if (p.LfeCrossoverHz is double xo) c.Add($"SET_UPMIX_PARAM LFE_XOVER {F(xo)}");
         if (p.LfeLevelDb is double ll) c.Add($"SET_UPMIX_PARAM LFE_LEVEL {F(ll)}");

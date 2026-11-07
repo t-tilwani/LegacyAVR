@@ -9,9 +9,10 @@
 //                               upmix (stereo content) | test signal
 //                               -> LFE generation (5.0 -> 5.1) -> bass shelf
 //                               -> custom per-channel EQ (v1.4.0, replaces the shelf)
-//                               -> per-channel gain/mute/audition -> no-sub LFE fold
+//                               -> per-channel gain/mute/audition
+//                               -> LFE fold / discard (outputs without an LFE channel)
 //                               -> night mode -> limiter -> output meters
-//                               -> AC-3/DTS/E-AC-3 encode -> IEC 61937
+//                               -> AC-3/DTS/E-AC-3 encode (2.0 / 3.x / 5.x) -> IEC 61937
 //                               (or PCM interleave/downmix) -> output ring (bytes)
 //
 // Output-queue sizing (v1.2.0, see docs/ARCHITECTURE.md "Latency"):
@@ -63,12 +64,18 @@ struct CoreConfig {
     uint32_t renderPeriodFrames = 480;   // renderer period expressed in 48 kHz bus frames
     uint32_t bufferMs = 0;               // extra safety margin; 0 = automatic (lowest safe)
     bool stereoPcmOverride = false;      // opened as PCM 2.0 because UpmixMode::PcmDirect saw stereo
-    bool dedicatedSub = true;            // false: LFE folded into FL/FR, bitstream encoded as 5.0
+    bool dedicatedSub = true;            // false: no LFE channel - never generated, source LFE folded
+                                         // into FL/FR (or discarded), bitstream encoded as 5.0 / 3.0
 
     [[nodiscard]] bool bitstream() const noexcept {
         return outputMode == OutputMode::Exclusive && codec != Codec::PCM;
     }
     [[nodiscard]] Codec effectiveCodec() const noexcept { return bitstream() ? codec : Codec::PCM; }
+    // v1.5.0: does the output carry an LFE channel? Not without a dedicated subwoofer, and
+    // never on PCM 2.0. Without one LFE is never generated and the source LFE is folded.
+    [[nodiscard]] bool lfeOutput() const noexcept {
+        return dedicatedSub && (bitstream() || pcmChannels >= 6);
+    }
 };
 
 // Output-queue sizing (frames at 48 kHz). Public so the host, the UI text and the tests
@@ -152,6 +159,7 @@ public:
     [[nodiscard]] IecType encoderIecType() const noexcept { return encIec_; }
     [[nodiscard]] int encoderDelaySamples() const noexcept { return encMain_.delaySamples(); }
     [[nodiscard]] int encoderMainChannels() const noexcept { return encMain_.channels(); }
+    [[nodiscard]] int encoderThreeChannels() const noexcept { return enc3_.isOpen() ? enc3_.channels() : 0; }
     [[nodiscard]] double resamplerDelayMs() const noexcept { return resampler_.delayMs(); }
     [[nodiscard]] double driftTargetFrames() const noexcept { return drift_.target(); }
     [[nodiscard]] const QueueSizing& sizing() const noexcept { return sizing_; }
@@ -162,7 +170,7 @@ public:
     MeterBank<kMaxInChannels> inputMeters;
     MeterBank<kBusChannels> outputMeters;   // bus (FL FR C LFE SL SR) after the limiter
     MeterBank<8> emitMeters;                // what actually leaves, in output channel order
-    MeterBank<1> lfeFoldMeter;              // no-subwoofer: LFE content folded into the fronts
+    MeterBank<1> lfeFoldMeter;              // no LFE output: source LFE folded into the fronts (or discarded)
     FrequencyRange frequencyRange;
     CoreStats stats;
 
@@ -191,7 +199,9 @@ private:
     SafetyLimiter limiter_;
     Resampler resampler_;
     DriftController drift_;
-    AudioEncoder encMain_, enc2_;   // encMain_: 5.1 (or 5.0 without a subwoofer)
+    // encMain_: 5.1 (5.0 without a subwoofer); enc2_: stereo kept as 2.0; enc3_ (v1.5.0,
+    // AC-3 / E-AC-3 only): 3.1 (3.0 without a subwoofer) for the stereo -> 3.x upmix.
+    AudioEncoder encMain_, enc2_, enc3_;
     Iec61937Detector detector_;
     TestSignalGenerator tests_;
     IecType encIec_ = IecType::None;

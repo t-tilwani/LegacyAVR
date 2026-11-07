@@ -131,6 +131,8 @@ public sealed class ChannelEqViewModel : ObservableObject
     public int Index { get; }
     public string Name { get => _name; set => Set(ref _name, value); }
     public EqBandViewModel[] Bands { get; }
+    /// <summary>v1.5.0: the channel name (what any list or selection box falls back to).</summary>
+    public override string ToString() => _name;
     public string ChannelResetKey => $"eqch{Index}";
 
     /// <summary>Per-channel enable / bypass (settings are kept while bypassed).</summary>

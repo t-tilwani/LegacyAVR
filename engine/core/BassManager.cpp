@@ -12,6 +12,8 @@ void BassManager::reset() noexcept {
     for (auto& b : shelf_) b.reset();
     genLp_.reset();
     genGain_ = 0.0f;
+    foldLp_.reset();
+    foldGain_ = 0.0f;
 }
 
 void BassManager::setBassDb(float target) noexcept {
@@ -48,7 +50,7 @@ void BassManager::setGenerator(float crossoverHz, float levelDb) noexcept {
     genLevel_ = dbToLin(std::clamp(levelDb, -30.0f, 6.0f));
 }
 
-float BassManager::generateLfe(float* const* bus, size_t frames, bool enable, bool excludeFronts) noexcept {
+float BassManager::generateLfe(float* const* bus, size_t frames, bool enable) noexcept {
     if (!enable && genGain_ <= 0.0f) {
         genLp_.reset();
         return 0.0f;
@@ -63,8 +65,7 @@ float BassManager::generateLfe(float* const* bus, size_t frames, bool enable, bo
     float* lfe = bus[LFE];
     for (size_t i = 0; i < frames; ++i) {
         g += d;
-        float sum = bus[FC][i] + bus[SL][i] + bus[SR][i];
-        if (!excludeFronts) sum += bus[FL][i] + bus[FR][i];
+        const float sum = bus[FL][i] + bus[FR][i] + bus[FC][i] + bus[SL][i] + bus[SR][i];
         lfe[i] += g * k * genLp_.process(sum);
     }
     genLp_.sanitize();
@@ -72,12 +73,26 @@ float BassManager::generateLfe(float* const* bus, size_t frames, bool enable, bo
     return genGain_;
 }
 
-void BassManager::foldLfeIntoFronts(float* const* bus, size_t frames, float gain) noexcept {
+void BassManager::foldLfeIntoFronts(float* const* bus, size_t frames, bool enable) noexcept {
     float* lfe = bus[LFE];
-    for (size_t i = 0; i < frames; ++i) {
-        const float v = gain * lfe[i];
-        bus[FL][i] += v;
-        bus[FR][i] += v;
+    const float target = enable ? kFoldGain : 0.0f;
+    if (target > 0.0f || foldGain_ > 0.0f) {
+        if (!foldLpReady_) {
+            foldLp_.setLowpass(double(kBusRate), double(kFoldCutoffHz));
+            foldLpReady_ = true;
+        }
+        const float d = (target - foldGain_) / float(frames ? frames : 1);
+        float g = foldGain_;
+        for (size_t i = 0; i < frames; ++i) {
+            g += d;
+            const float v = g * foldLp_.process(lfe[i]);
+            bus[FL][i] += v;
+            bus[FR][i] += v;
+        }
+        foldLp_.sanitize();
+        foldGain_ = target;
+    } else {
+        foldLp_.reset();   // next fold starts from a clean filter
     }
     std::memset(lfe, 0, frames * sizeof(float));
 }

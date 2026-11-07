@@ -5,7 +5,7 @@
 #   cmake --build --preset release
 #   ctest --preset release
 cmake_minimum_required(VERSION 3.31)
-project(LegacyAVR VERSION 1.0.0 LANGUAGES CXX RC)
+project(LegacyAVR VERSION 1.5.0 LANGUAGES CXX RC)
 
 if(NOT WIN32 OR NOT MSVC)
     message(FATAL_ERROR "LegacyAVR targets Windows 11 with MSVC (Visual Studio 2026) only.")
@@ -39,6 +39,7 @@ add_library(LegacyAVR.Core STATIC
     engine/core/OutputPolicy.cpp
     engine/core/ProcessingCore.cpp
     engine/core/Resampler.cpp
+    engine/core/StatusText.cpp
     engine/core/TestSignals.cpp
     engine/core/Upmixer.cpp
     engine/ipc/ControlProtocol.cpp

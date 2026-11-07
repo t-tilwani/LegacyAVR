@@ -5,10 +5,14 @@
 //    the channel sum is written into the LFE plane when the source has no LFE of its
 //    own. The level ramps in (0.5 s) and out (0.3 s) so switching never clicks or jumps.
 //    Uses the same crossover / LFE level as the upmixer so both sound alike.
-//      with a subwoofer : source = FL + FR + FC + SL + SR
-//      without one      : source = FC + SL + SR  (bass of the centre/surround speakers,
-//                         which is then folded into the fronts = simple bass redirect)
-//  * No-subwoofer fold: LFE is added to FL and FR and the LFE plane is cleared.
+//    Source = FL + FR + FC + SL + SR. Only with a dedicated subwoofer (v1.5.0: without one
+//    LegacyAVR never generates an LFE channel).
+//  * LFE fold (v1.5.0, outputs without an LFE channel): the source's own LFE is low-passed
+//    (LR4, 120 Hz - the LFE band limit, removes out-of-band rubbish), added to FL and FR at
+//    -3 dB each (equal power: the pair carries the LFE at its original power) and the LFE
+//    plane is cleared. Gain changes are ramped. The safety limiter after it guarantees the
+//    -0.3 dBFS ceiling, so a full-scale LFE on top of full-scale fronts cannot clip.
+//    The LFE channel trim (applied before the fold) sets how loud the folded bass is.
 //
 // Real-time safe: no allocation, coefficient maths only when a value changes.
 #pragma once
@@ -24,7 +28,8 @@ namespace avr {
 class BassManager {
 public:
     static constexpr float kGenSumGain = 0.35f;   // channel-sum scaling before the LFE level
-    static constexpr float kFoldGain = 1.0f;      // LFE -> each front speaker (0 dB; LFE trim adjusts)
+    static constexpr float kFoldGain = 0.70710678f;   // LFE -> each front speaker (-3 dB; LFE trim adjusts)
+    static constexpr float kFoldCutoffHz = 120.0f;    // LFE band limit
     static constexpr float kBassStepDb = 1.5f;    // v1.4.0: shelf glide per block (12 dB in ~0.26 s)
 
     void reset() noexcept;
@@ -38,13 +43,16 @@ public:
     // Generator settings (crossover + level shared with the upmixer).
     void setGenerator(float crossoverHz, float levelDb) noexcept;
 
-    // Adds a generated LFE into bus[LFE] while `enable` (ramped). excludeFronts selects the
-    // no-subwoofer source (centre + surrounds only). Returns the current ramp gain (0..1).
-    float generateLfe(float* const* bus, size_t frames, bool enable, bool excludeFronts) noexcept;
+    // Adds a generated LFE into bus[LFE] while `enable` (ramped). Returns the current ramp
+    // gain (0..1).
+    float generateLfe(float* const* bus, size_t frames, bool enable) noexcept;
     [[nodiscard]] float generatorGain() const noexcept { return genGain_; }
 
-    // No subwoofer: LFE -> FL + FR, LFE cleared.
-    static void foldLfeIntoFronts(float* const* bus, size_t frames, float gain = kFoldGain) noexcept;
+    // Output without an LFE channel: `enable` folds the (filtered) LFE into FL + FR, otherwise
+    // it is discarded. The LFE plane is always cleared. The fold gain ramps over the block
+    // when `enable` changes, so switching never clicks.
+    void foldLfeIntoFronts(float* const* bus, size_t frames, bool enable) noexcept;
+    [[nodiscard]] float foldGain() const noexcept { return foldGain_; }
 
 private:
     std::array<Biquad, kBusChannels> shelf_{};
@@ -55,6 +63,10 @@ private:
     float genCrossover_ = -1.0f;
     float genLevel_ = 0.316f;
     float genGain_ = 0.0f;
+
+    LinkwitzRiley4 foldLp_;
+    bool foldLpReady_ = false;
+    float foldGain_ = 0.0f;   // current per-front gain (0 .. kFoldGain)
 };
 
 } // namespace avr

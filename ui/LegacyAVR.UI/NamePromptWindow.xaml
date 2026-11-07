@@ -1,0 +1,18 @@
+<Window x:Class="LegacyAVR.UI.NamePromptWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="LegacyAVR" Width="440" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Style="{StaticResource DarkWindow}">
+    <!-- v1.5.0: asks for a profile name (footer quick save when no profile is active). -->
+    <StackPanel Margin="20,16,20,16">
+        <TextBlock x:Name="Prompt" Text="Profile name" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8" />
+        <TextBox x:Name="NameBox" MaxLength="80" />
+        <TextBlock x:Name="Hint" Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                   Text="The new profile stores every setting for the selected output and becomes the active profile." />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="Save" Style="{StaticResource AccentButton}" IsDefault="True" Click="OnSave" Margin="0,0,8,0" MinWidth="80" />
+            <Button Content="Cancel" IsCancel="True" MinWidth="80" />
+        </StackPanel>
+    </StackPanel>
+</Window>

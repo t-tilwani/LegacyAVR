@@ -68,8 +68,13 @@ bool loadConfig(const std::filesystem::path& file, EngineConfig& cfg) {
     f("bass_db", cfg.bassDb);
     b("dedicated_sub", cfg.dedicatedSub);
     if (auto it = kv.find("lfe_gen"); it != kv.end()) if (auto m = ipc::parseLfeGenMode(it->second)) cfg.lfeGen = *m;
+    // A file from before v1.2 / v1.3 has no gaming / game_lfe_gen key: keep the defaults of the
+    // version that wrote it, not the v1.5.0 new-install defaults.
+    if (!kv.contains("gaming")) cfg.gaming = kLegacyGamingDefault;
+    if (!kv.contains("game_lfe_gen")) cfg.gameLfeGen = kLegacyGameLfeGenDefault;
     if (auto it = kv.find("gaming"); it != kv.end()) if (auto m = ipc::parseGamingMode(it->second)) cfg.gaming = *m;
     b("game_lfe_gen", cfg.gameLfeGen);
+    b("lfe_fold", cfg.lfeFold);
     f("lfe_reset_s", cfg.lfeResetSeconds);
     cfg.lfeResetSeconds = clampLfeResetSeconds(cfg.lfeResetSeconds);   // older files may hold up to 600
     b("eq_enabled", cfg.eq.enabled);
@@ -117,6 +122,7 @@ bool saveConfig(const std::filesystem::path& file, const EngineConfig& cfg) {
         out << "lfe_gen=" << ipc::lfeGenToken(cfg.lfeGen) << '\n';
         out << "gaming=" << ipc::gamingToken(cfg.gaming) << '\n';
         out << "game_lfe_gen=" << (cfg.gameLfeGen ? 1 : 0) << '\n';
+        out << "lfe_fold=" << (cfg.lfeFold ? 1 : 0) << '\n';
         out << "lfe_reset_s=" << cfg.lfeResetSeconds << '\n';
         out << "eq_enabled=" << (cfg.eq.enabled ? 1 : 0) << '\n';
         for (size_t c = 0; c < kBusChannels; ++c) {

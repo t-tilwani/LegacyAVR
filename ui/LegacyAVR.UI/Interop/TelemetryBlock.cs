@@ -6,7 +6,7 @@ namespace LegacyAVR.UI.Interop;
 
 /// <summary>
 /// Managed mirror of avr::ipc::TelemetryBlock (engine/ipc/TelemetryLayout.h).
-/// 2048 bytes (layout v4, LegacyAVR 1.3.0), Pack = 1. Field order and sizes MUST match the C++ struct exactly;
+/// 2048 bytes (layout v5, LegacyAVR 1.4.0 - 1.5.0), Pack = 1. Field order and sizes MUST match the C++ struct exactly;
 /// LegacyAVR.UI.Tests pins every offset that the C++ side static_asserts.
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
@@ -173,6 +173,8 @@ public enum TelemetryFlags2 : uint
     LfeGameOverride = 1 << 6,
     LfeInhibited = 1 << 7,
     EqEnabled = 1 << 8,          // v5: Custom EQ master switch on (replaces the bass control)
+    LfeFold = 1 << 9,            // v1.5.0: source LFE folded into FL/FR when the output has no LFE channel
+    NoLfeOutput = 1 << 10,       // v1.5.0: the running output has no LFE channel (no subwoofer, or PCM 2.0)
 }
 
 /// <summary>Numeric values match avr::EngineState / Codec / OutputMode / UpmixMode / TestSignal.</summary>
@@ -183,7 +185,7 @@ public enum UpmixKind : uint { Passthrough = 0, Upmix31 = 1, Upmix51 = 2, PcmDir
 public enum OutputStatusKind : uint { Match = 0, FallbackShared = 1, BitstreamPassthrough = 2, StereoPcmDirect = 3, StoppedByUser = 4, Error = 5 }
 public enum TestSignalKind : uint { Off = 0, PinkNoise = 1, ChannelId = 2, CenterBleed = 3, LfeSweep = 4, PhaseCheck = 5 }
 public enum LfeGenKind : uint { Off = 0, Auto = 1, Always = 2 }
-public enum LfeStatusKind : uint { None = 0, Source = 1, Generated = 2, Upmixed = 3, Inhibited = 4, TestSignal = 5 }
+public enum LfeStatusKind : uint { None = 0, Source = 1, Generated = 2, Upmixed = 3, Inhibited = 4, TestSignal = 5, Dropped = 6 }
 public enum GamingKind : uint { Auto = 0, On = 1, Off = 2 }
 public enum ProcessingStateKind : uint
 {

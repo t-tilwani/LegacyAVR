@@ -347,19 +347,28 @@ stateDiagram-v2
 | PCM 5.0 / 7.0 + LFE generation (v1.2) | `BassManager`: LR4 low-pass of the channel sum (upmixer crossover/level) written to LFE, 0.5 s fade-in, 0.3 s fade-out; *Auto* after 3 s of confirmed multichannel content without LFE, *Always* immediately (and also for stereo kept as stereo: 2.0 → 2.1) | DD 5.1 |
 | PCM 5.1 / 7.1 whose LFE carries signal (v1.3) | native-LFE latch: the capture channel mapped to `SPEAKER_LOW_FREQUENCY` by the configured input mask (not the live layout) peaking above −60 dBFS sets `LiveParams::lfeInhibited`. While set, *Auto* and game-forced generation are held off (existing 0.3 s fade-out). It clears only after every input channel has stayed below −80 dBFS for `lfeResetSeconds` (default 10 s; whole seconds 1–300 since v1.4, 10–600 in v1.3). Kept in `LiveParams`, so it survives `configure()` / pipeline rebuilds and mode changes. General *Always* is not affected | DD 5.1 (source LFE) |
 | any + game mode + *LFE generation while gaming* (v1.3) | generation forced on with *Always* semantics (5.0 → 5.1, stereo → 2.1) while game mode is active, subject to the native-LFE latch; the general LFE-generation control is greyed out in the UI meanwhile | DD 5.1 |
-| any, *Dedicated subwoofer inactive* (v1.2; called *Dedicated bass channel* off before v1.3) | LFE (after its trim) folded into FL/FR, upmixer LFE dropped, LFE generation takes only C/SL/SR bass | DD/DTS **5.0** (5.1 with silent LFE if the encoder refuses 5.0) |
-| PCM 2.0 + *3.1 / 5.1 upmix* | `Upmixer` (centre steering, LFE LR4 80 Hz, delayed decorrelated surrounds) | DD 5.1 |
+| any, *Dedicated subwoofer inactive* (v1.2; v1.5 rules) | no LFE is generated (general, *Always* and game-forced generation are all off; upmixer LFE dropped). The source's own LFE (after its trim) is low-passed (LR4 120 Hz) and added to FL/FR at −3 dB each (equal power, ramped), or discarded when `LiveParams::lfeFold` is off (`LfeStatus::Dropped`). The safety limiter after it keeps the −0.3 dBFS ceiling | DD/DTS **5.0** (5.1 with silent LFE if the encoder refuses 5.0); 3.x upmix: DD/DD+ **3.0**, DTS 5.0 with silent surrounds |
+| PCM 2.0 output (any subwoofer setting, v1.5) | no LFE channel exists: nothing is generated, the source LFE is folded (as above) before the stereo downmix | PCM 2.0 |
+| PCM 2.0 + *3.1 / 5.1 upmix* | `Upmixer` (centre steering, LFE LR4 80 Hz, delayed decorrelated surrounds) | DD/DD+ **3.1** (v1.5: real acmod 3/0 + LFE; DTS: 5.1 with silent surrounds) / DD 5.1 |
 | PCM 5.1 | direct routing (back or side surrounds → SL/SR) | DD 5.1 |
 | PCM 7.1 | discrete fold-down: SL' = 0.707·(SL + BL), SR' = 0.707·(SR + BR) | DD 5.1 |
 | IEC 61937 AC-3 / DTS | bypass all DSP, forward words bit-exact; renderer re-opened with the matching sub-format if needed (750 ms hysteresis) | original bitstream |
 
-Two encoder instances (2.0 and 5.1, or 5.0 without a subwoofer) are opened up front, so switching
-between them never allocates.
+Up to three encoder instances are opened up front, so switching between them never allocates: 2.0,
+the main 5.1 (5.0 without a subwoofer) and - v1.5.0, AC-3 / E-AC-3 only - 3.1 (3.0 without a
+subwoofer) for the stereo → 3.x upmix. FFmpeg's DTS encoder accepts only mono, stereo, 2/2, 5.0 and 5.1,
+so with DTS the 3.x upmix stays in the 5.x stream and `processingText` says "in a 5.x stream, surrounds
+silent". 7.0 / 7.1 cannot be sent: the bus and every encoder stop at 5.1, so 7.x is folded to 5.x and
+labelled as a fold-down; a 7.1 PCM device format carries 5.x with a silent back pair (the emit mask stays
+the device's slot layout so the meters line up; the labels come from `core/StatusText`).
 
 **LFE status (v1.3.0).** After each block the core reports where the LFE comes from, in priority order:
 TestSignal > Generated (generator gain > 0) > Source (multichannel input whose live mask has LFE) > Upmixed
-> Inhibited (latch holding generation off) > None. The host turns this into `lfeStatusText`, appending
-"→ folded into FL/FR" when there is no dedicated subwoofer, and a countdown while inhibited.
+> Inhibited (latch holding generation off) > None. v1.5.0 adds Dropped (output without an LFE channel and
+the fold switched off). `core/StatusText` turns this into `lfeStatusText` ("Source LFE → folded into front
+L/R" / "Source LFE discarded" when the output has no LFE channel, a countdown while inhibited). Telemetry
+flags `TF2_LfeFold` and `TF2_NoLfeOutput` (v1.5.0, layout version unchanged) tell the dashboard which mode
+the LFE switch is in.
 
 **Streaming services.** Detecting Netflix / Prime Video / Disney+ / Crunchyroll is not implemented on
 purpose: WASAPI loopback of the cable delivers one mixed stream with no process, tab or URL information,
@@ -383,9 +392,10 @@ instead of retrying PCM forever, and the fallback reason names *Exclusive PCM 2.
 
 Each real block records what the DSP actually did (`ProcessingState`: stereo → 5.1/3.1 upmix,
 stereo kept, stereo → PCM, 2.0 → 2.1, discrete, 5.0 → 5.1 LFE generation, 7.1 → 5.1 fold-down,
-bitstream, test). The host turns it into `processingText` ("Stereo → 5.1 upmix", "5.0 → 5.1 LFE
-generation", "No upmix (discrete 5.1)", "+ LFE → fronts" without a subwoofer). The dashboard never
-infers it from the selected mode.
+bitstream, test). `core/StatusText` (portable, unit-tested) turns it into `processingText` from the
+output that really runs: "Stereo → 5.1 upmix", "Stereo → 3.0 upmix" without a subwoofer, "5.0 → 5.1 LFE
+generation", "5.1 → 5.0 (no LFE channel out) | LFE → front L/R", "7.1 → 5.0 fold-down", "No upmix
+(discrete 5.1)", "| downmixed to PCM 2.0". The dashboard never infers it from the selected mode.
 
 ---
 
@@ -447,7 +457,8 @@ SET_CODEC DTS            -> OK / END            (restart-level: supervisor rebui
 SET_GAIN 3 -4.5          -> OK / END            (live: atomic, ramped next block)
 TEST PINK 21             -> OK / END            (pink noise on FL + C + SL, mask hex)
 SET_BUFFER_MS 0          -> OK / END            (v1.2: automatic, lowest safe margin)
-SET_SUB 0                -> OK / END            (v1.2: no subwoofer -> 5.0 + LFE folded; restart-level)
+SET_SUB 0                -> OK / END            (v1.2: no subwoofer -> 5.0 / 3.0, no LFE generated; restart-level)
+SET_LFE_FOLD 1           -> OK / END            (v1.5: output without LFE - fold source LFE into FL/FR (1) or discard (0); live)
 SET_LFE_GEN AUTO|ALWAYS|OFF, SET_GAMING AUTO|ON|OFF, SET_BASS -3   (v1.2: live)
 GAME_DETECTED 1 "game"   -> OK / END            (v1.2: dashboard heartbeat, expires after 6 s)
 SET_GAME_LFE 1           -> OK / END            (v1.3: force LFE generation while game mode is active; live)
@@ -531,7 +542,10 @@ boosts cannot clip; the safety limiter stays. Audition (`auditionChannel`) mutes
   v1.2.0 adds: Lossless PCM 2.0 end to end through `OutputPolicy` (section 8.1), latency model vs.
   impulse measurement and clock drift, AC-3 5.0 channel mapping, no-subwoofer fold + 5.0 encoding,
   LFE generation Auto/Always/Off, game mode, processing state, bass shelf, frequency range, output
-  policy units and the v3 telemetry layout. A failed run now lists the failing tests by name at the
+  policy units and the v3 telemetry layout. v1.5.0 adds: AC-3 3.0 / 3.1 decode loopback, the no-subwoofer
+  rules (never generates, 3.0 / 5.0 encoders, DTS 5.x container), the filtered −3 dB LFE fold (power kept,
+  ramped, discard mode), full-scale fold against the limiter ceiling, PCM 2.0 LFE fold, the status / layout
+  wording and the legacy-config defaults. A failed run now lists the failing tests by name at the
   end, and `build.ps1` repeats them in its error message.
 * `LegacyAVR.Tests.exe --latency`: per-margin latency table (section 6.2).
 * `LegacyAVR.Tests.exe --bench`: 60 s of audio per scenario, prints µs per 1536-frame block and

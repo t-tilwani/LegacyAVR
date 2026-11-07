@@ -38,7 +38,7 @@ internal static class Samples
             Name = name, DeviceId = deviceId, DeviceName = deviceName,
             Codec = CodecKind.DTS, Bitrate = 1509750, OutputMode = OutputModeKind.Exclusive, BufferMs = 20,
             Upmix = UpmixKind.Upmix31, StereoAs20 = false, NightMode = true, LfeGen = LfeGenKind.Always,
-            Gaming = GamingKind.On, GameLfeGen = true, LfeResetSeconds = 45, BassDb = -2.5,
+            Gaming = GamingKind.On, GameLfeGen = true, LfeResetSeconds = 45, LfeFold = false, BassDb = -2.5,
             CentreLevel = 0.7, CentreFloor = 0.2, DialogBoost = 0.5, SurroundLevel = 0.9, SurroundDelayMs = 15,
             DedicatedSub = false, LfeCrossoverHz = 100, LfeLevelDb = -6, MasterDb = -3,
             GainsDb = new[] { 0.0, -1.5, 2.0, -48.5, 0.5, -3.0 }, Mutes = new[] { false, false, true, false, false, true },
@@ -208,7 +208,7 @@ public class ProfileApplyTests
         Assert.StartsWith("SET_OUTPUT_DEVICE", cmds[0]);
         foreach (var verb in new[] { "SET_SUB 0", "SET_CODEC DTS", "SET_BITRATE 1509750", "SET_OUTPUT_MODE EXCLUSIVE", "SET_BUFFER_MS 20",
                                      "SET_UPMIX UPMIX31", "SET_STEREO_AS_20 0", "SET_NIGHT_MODE 1", "SET_LFE_GEN ALWAYS", "SET_GAMING ON",
-                                     "SET_GAME_LFE 1", "SET_LFE_RESET 45", "SET_BASS -2.5", "SET_UPMIX_PARAM LFE_XOVER 100",
+                                     "SET_GAME_LFE 1", "SET_LFE_RESET 45", "SET_LFE_FOLD 0", "SET_BASS -2.5", "SET_UPMIX_PARAM LFE_XOVER 100",
                                      "SET_UPMIX_PARAM LFE_LEVEL -6", "SET_UPMIX_PARAM CENTRE 0.7", "SET_MASTER -3", "SET_GAIN 3 -48.5",
                                      "SET_MUTE 5 1", "SET_EQ_BAND 0 2 1200 -3.5 1.4", "SET_EQ_CHANNEL 5 0", "SET_EQ 1" })
             Assert.Contains(cmds, c => c.StartsWith(verb));
@@ -382,12 +382,46 @@ public class NoSubwooferTests
     }
 
     [Fact]
-    public void LfeGenerationStaysAvailableWithoutASubwoofer()
+    public void LfeSwitchIsGenerationWithASubAndFoldWithout()
     {
-        var noSub = MainViewModel.BuildLfeGenOptions(false);
-        Assert.Equal(3, noSub.Count);
-        Assert.DoesNotContain(noSub, o => o.Label.Contains("2.1"));       // stereo -> 2.1 needs a subwoofer
-        Assert.Contains(noSub, o => o.Label.Contains("fronts"));
+        // v1.5.0: with a subwoofer the switch generates an LFE; without one it never generates
+        // and only decides whether the source's own LFE is folded into the fronts.
+        var gen = MainViewModel.BuildLfeGenOptions();
+        Assert.Equal(new[] { LfeGenKind.Auto, LfeGenKind.Always, LfeGenKind.Off }, gen.Select(o => o.Value));
+        var fold = MainViewModel.BuildLfeFoldOptions();
+        Assert.Equal(new[] { true, false }, fold.Select(o => o.Value));   // fold is the first (recommended) choice
+        Assert.All(fold, o => Assert.DoesNotContain("generat", o.Label, StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("front", fold[0].Label);
+        Assert.Contains("discard", fold[1].Label);
+    }
+
+    [Fact]
+    public void NewInstallDefaults()
+    {
+        // v1.5.0: game mode off, LFE generation while gaming on, source LFE folded without a sub.
+        Assert.Equal(GamingKind.Off, FactoryDefaults.Gaming);
+        Assert.True(FactoryDefaults.GameLfeGen);
+        Assert.True(FactoryDefaults.LfeFold);
+    }
+
+    [Fact]
+    public void LfeFoldIsOptionalInProfiles()
+    {
+        // A 1.4 profile has no LfeFold: still complete, and applying it leaves the setting alone.
+        var old = Samples.Full() with { LfeFold = null };
+        Assert.True(old.IsComplete);
+        Assert.DoesNotContain(ProfileStore.Commands(old, null), c => c.StartsWith("SET_LFE_FOLD"));
+        Assert.Contains("SET_LFE_FOLD 1", ProfileStore.Commands(old with { LfeFold = true }, null));
+    }
+
+    [Fact]
+    public void StartingProfilesLeaveGameModeAloneExceptTheOneThatNeedsIt()
+    {
+        foreach (var p in ProfileStore.Defaults)
+        {
+            if (p.Upmix == UpmixKind.PcmDirect) Assert.Equal(GamingKind.Auto, p.Gaming);   // relies on game mode
+            else Assert.Null(p.Gaming);
+        }
     }
 }
 

@@ -259,8 +259,14 @@
         </DataTemplate>
         <DataTemplate x:Key="HelpCtl.LfeGen">
             <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
-                <ComboBox ItemsSource="{Binding LfeGenOptions}" SelectedItem="{Binding SelectedLfeGen, Mode=TwoWay}" IsEnabled="{Binding IsGeneralLfeGenEnabled}" />
-                <TextBlock Text="{Binding LfeOverrideText}" Foreground="{StaticResource Accent}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                <!-- v1.5.0: one switch, two meanings - LFE generation with a subwoofer, source-LFE fold without one -->
+                <ComboBox ItemsSource="{Binding LfeGenOptions}" SelectedItem="{Binding SelectedLfeGen, Mode=TwoWay}" IsEnabled="{Binding IsGeneralLfeGenEnabled}"
+                          Visibility="{Binding DedicatedSub, Converter={StaticResource BoolToVis}}" />
+                <ComboBox ItemsSource="{Binding LfeFoldOptions}" SelectedItem="{Binding SelectedLfeFold, Mode=TwoWay}"
+                          Visibility="{Binding IsNoSub, Converter={StaticResource BoolToVis}}" />
+                <TextBlock Text="{Binding LfeOverrideText}" Foreground="{StaticResource Accent}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                           Visibility="{Binding DedicatedSub, Converter={StaticResource BoolToVis}}" />
+                <TextBlock Text="{Binding LfeModeNote}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
                 <TextBlock Text="{Binding LfeStatusText, StringFormat='LFE now: {0}'}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
             </StackPanel>
         </DataTemplate>
@@ -275,7 +281,8 @@
         </DataTemplate>
         <DataTemplate x:Key="HelpCtl.GameLfe">
             <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
-                <CheckBox Content="LFE generation while gaming" IsChecked="{Binding GameLfeGen, Mode=TwoWay}" />
+                <CheckBox Content="LFE generation while gaming" IsChecked="{Binding GameLfeGen, Mode=TwoWay}" IsEnabled="{Binding DedicatedSub}" />
+                <TextBlock Text="{Binding GameLfeText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
                 <TextBlock Text="{Binding GameStatusText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
             </StackPanel>
         </DataTemplate>
@@ -397,6 +404,22 @@
         <DataTemplate x:Key="HelpCtl.RestartEngine">
             <Button DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}" HorizontalAlignment="Left"
                     Content="Restart engine" Command="{Binding RestartEngineCommand}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Emergency">
+            <WrapPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <Button Content="Emergency reset (stop and restart LegacyAVR)" Command="{Binding EmergencyRestartCommand}" Margin="0,0,8,6" />
+                <Button Content="Close LegacyAVR and stop the engine" Command="{Binding EmergencyStopCommand}" Margin="0,0,8,6" />
+            </WrapPanel>
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.OpenLog">
+            <Button DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}" HorizontalAlignment="Left"
+                    Content="Open log folder" Command="{Binding OpenLogCommand}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.QuickSave">
+            <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                <Button HorizontalAlignment="Left" Content="Save profile" Command="{Binding QuickSaveProfileCommand}" ToolTip="{Binding QuickSaveTooltip}" />
+                <TextBlock Text="{Binding ProfileStatus}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+            </StackPanel>
         </DataTemplate>
         <DataTemplate x:Key="HelpCtl.Shutdown">
             <Button DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}" HorizontalAlignment="Left"
@@ -523,9 +546,20 @@
 
         <!-- ================================================================ banners -->
         <StackPanel Grid.Row="2">
+            <!-- v1.5.0: the message can be selected / copied, and the log is one click away -->
             <Border Background="#33EF4444" BorderBrush="{StaticResource Danger}" BorderThickness="1" CornerRadius="8" Padding="12,8"
                     Margin="0,0,0,10" Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
-                <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox Text="{Binding ErrorText, Mode=OneWay}" Style="{StaticResource SelectableText}" VerticalAlignment="Center"
+                             ToolTip="Select the text and press Ctrl+C to copy it" />
+                    <Button Grid.Column="1" Content="Open log folder" Style="{StaticResource SmallButton}" Command="{Binding OpenLogCommand}"
+                            Margin="12,0,0,0" VerticalAlignment="Center"
+                            ToolTip="Opens the folder of AVREngine.log (the engine's log) with the file selected" />
+                </Grid>
             </Border>
             <Border Background="#33F59E0B" BorderBrush="{StaticResource Warn}" BorderThickness="1" CornerRadius="8" Padding="12,8"
                     Margin="0,0,0,10" Visibility="{Binding IsBitstreamBlocked, Converter={StaticResource BoolToVis}}">
@@ -567,10 +601,17 @@
                 <StackPanel>
                     <Grid Height="20">
                         <TextBlock Text="OUTPUT  (what the AVR / TV receives)" Style="{StaticResource Caption}" VerticalAlignment="Center" />
-                        <Border HorizontalAlignment="Right" VerticalAlignment="Center" Background="{Binding EffectiveBrush}" CornerRadius="4" Padding="6,1"
-                                ToolTip="Requested format vs. what LegacyAVR actually opened">
-                            <TextBlock Text="{Binding EffectiveStatusText}" FontSize="10" FontWeight="Bold" Foreground="#0F1115" />
-                        </Border>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <!-- v1.5.0: Custom EQ indicator -->
+                            <Border Background="{StaticResource Accent}" CornerRadius="4" Padding="6,1" Margin="0,0,6,0"
+                                    Visibility="{Binding EqEnabled, Converter={StaticResource BoolToVis}}" ToolTip="{Binding EqStatusText}">
+                                <TextBlock Text="{Binding CustomEqBadgeText}" FontSize="10" FontWeight="Bold" Foreground="#0F1115" />
+                            </Border>
+                            <Border Background="{Binding EffectiveBrush}" CornerRadius="4" Padding="6,1"
+                                    ToolTip="Requested format vs. what LegacyAVR actually opened">
+                                <TextBlock Text="{Binding EffectiveStatusText}" FontSize="10" FontWeight="Bold" Foreground="#0F1115" />
+                            </Border>
+                        </StackPanel>
                     </Grid>
                     <TextBlock Text="{Binding OutputFormat}" Style="{StaticResource Headline}" Foreground="{StaticResource Accent}" TextTrimming="CharacterEllipsis" />
                     <TextBlock Text="{Binding OutputDetail}" Style="{StaticResource Dim}" FontSize="11" Margin="0,2,0,10" TextTrimming="CharacterEllipsis" />
@@ -819,17 +860,19 @@
                                         <TextBlock Grid.Row="4" Grid.Column="2" Text="{Binding SurroundDelayMs, StringFormat={}{0:0} ms}" HorizontalAlignment="Right" VerticalAlignment="Center" />
                                         <Button Grid.Row="4" Grid.Column="3" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="delay" />
 
-                                        <!-- LFE crossover / level are shared with LFE generation, so they stay enabled in every mode. -->
+                                        <!-- LFE crossover / level: upmix LFE and LFE generation - both need a dedicated subwoofer (v1.5.0). -->
                                         <TextBlock Grid.Row="5" Grid.ColumnSpan="4" Text="{Binding LfeControlsNote}" Style="{StaticResource Dim}" FontSize="11"
                                                    Margin="0,6,0,2" TextWrapping="Wrap" />
 
                                         <TextBlock Grid.Row="6" Text="LFE crossover" Style="{StaticResource Dim}" VerticalAlignment="Center" />
-                                        <Slider Grid.Row="6" Grid.Column="1" Minimum="40" Maximum="200" Value="{Binding LfeCrossoverHz, Mode=TwoWay}" VerticalAlignment="Center" />
+                                        <Slider Grid.Row="6" Grid.Column="1" Minimum="40" Maximum="200" Value="{Binding LfeCrossoverHz, Mode=TwoWay}" VerticalAlignment="Center"
+                                                IsEnabled="{Binding DedicatedSub}" />
                                         <TextBlock Grid.Row="6" Grid.Column="2" Text="{Binding LfeCrossoverHz, StringFormat={}{0:0} Hz}" HorizontalAlignment="Right" VerticalAlignment="Center" />
                                         <Button Grid.Row="6" Grid.Column="3" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="lfeXover" />
 
                                         <TextBlock Grid.Row="7" Text="LFE level" Style="{StaticResource Dim}" VerticalAlignment="Center" />
-                                        <Slider Grid.Row="7" Grid.Column="1" Minimum="-30" Maximum="6" Value="{Binding LfeLevelDb, Mode=TwoWay}" VerticalAlignment="Center" />
+                                        <Slider Grid.Row="7" Grid.Column="1" Minimum="-30" Maximum="6" Value="{Binding LfeLevelDb, Mode=TwoWay}" VerticalAlignment="Center"
+                                                IsEnabled="{Binding DedicatedSub}" />
                                         <TextBlock Grid.Row="7" Grid.Column="2" Text="{Binding LfeLevelDb, StringFormat={}{0:0.0} dB}" HorizontalAlignment="Right" VerticalAlignment="Center" />
                                         <Button Grid.Row="7" Grid.Column="3" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="lfeLevel" />
                                     </Grid>
@@ -878,7 +921,7 @@
                                     </Grid>
                                     <TextBlock Text="{Binding EqStatusText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
                                     <CheckBox Content="{Binding SubToggleText}" IsChecked="{Binding DedicatedSub, Mode=TwoWay}" Margin="0,12,0,4"
-                                              ToolTip="Same switch as at the bottom right. Off = no subwoofer: 5.0 output, LFE played by the front speakers." />
+                                              ToolTip="Same switch as at the bottom right. Off = no subwoofer: no LFE channel is sent or generated (5.0 / 3.0); the source's own LFE is folded into the front speakers (see the card below)." />
                                     <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                         <TextBlock Text="LFE  " Style="{StaticResource Caption}" Margin="0" VerticalAlignment="Center" />
                                         <TextBlock Text="{Binding LfeStatusText}" Foreground="{Binding LfeStatusBrush}" FontWeight="SemiBold" TextWrapping="Wrap" />
@@ -888,11 +931,18 @@
 
                             <Border Style="{StaticResource Card}" Margin="0,0,0,16">
                                 <StackPanel>
-                                    <TextBlock Text="LFE GENERATION  (sources without their own subwoofer channel)" Style="{StaticResource Caption}" />
+                                    <!-- v1.5.0: with a subwoofer this switch controls LFE generation; without one it
+                                         controls whether the source's own LFE is folded into the fronts. -->
+                                    <TextBlock Text="{Binding LfeCardCaption}" Style="{StaticResource Caption}" />
                                     <ComboBox ItemsSource="{Binding LfeGenOptions}" SelectedItem="{Binding SelectedLfeGen, Mode=TwoWay}" Margin="0,4,0,0"
-                                              IsEnabled="{Binding IsGeneralLfeGenEnabled}" />
-                                    <TextBlock Text="{Binding LfeOverrideText}" Foreground="{StaticResource Accent}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
-                                    <Grid Margin="0,10,0,0">
+                                              IsEnabled="{Binding IsGeneralLfeGenEnabled}"
+                                              Visibility="{Binding DedicatedSub, Converter={StaticResource BoolToVis}}" />
+                                    <ComboBox ItemsSource="{Binding LfeFoldOptions}" SelectedItem="{Binding SelectedLfeFold, Mode=TwoWay}" Margin="0,4,0,0"
+                                              Visibility="{Binding IsNoSub, Converter={StaticResource BoolToVis}}" />
+                                    <TextBlock Text="{Binding LfeOverrideText}" Foreground="{StaticResource Accent}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
+                                               Visibility="{Binding DedicatedSub, Converter={StaticResource BoolToVis}}" />
+                                    <TextBlock Text="{Binding LfeModeNote}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                    <Grid Margin="0,10,0,0" Visibility="{Binding DedicatedSub, Converter={StaticResource BoolToVis}}">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="160" />
                                             <ColumnDefinition Width="*" />
@@ -909,10 +959,8 @@
                                                 ToolTip="Reset to 10 s, the recommended value (asks first)" />
                                     </Grid>
                                     <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                                               Visibility="{Binding DedicatedSub, Converter={StaticResource BoolToVis}}"
                                                Text="Auto stops for the rest of the film or game once the source uses its own LFE, so a 5.1 mix with a quiet LFE is never given a second one. It starts listening again after the silence time above (all channels below -80 dBFS). 10 s is recommended." />
-                                    <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
-                                               Text="No subwoofer: LFE generation moves the bass of the centre and surround speakers to the fronts instead, using the LFE crossover and LFE level from the Upmixing card."
-                                               Visibility="{Binding IsNoSub, Converter={StaticResource BoolToVis}}" />
                                 </StackPanel>
                             </Border>
 
@@ -922,9 +970,8 @@
                                     <ComboBox ItemsSource="{Binding GamingOptions}" SelectedItem="{Binding SelectedGaming, Mode=TwoWay}" Margin="0,4,0,0" />
                                     <TextBlock Text="{Binding GameStatusText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,8" TextWrapping="Wrap" />
                                     <CheckBox Content="LFE generation while gaming (overrides the LFE generation setting during games)"
-                                              IsChecked="{Binding GameLfeGen, Mode=TwoWay}" />
-                                    <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap"
-                                               Text="On: while a game is active, every source without its own LFE gets one (5.0 to 5.1, stereo to 2.1). Games that use their own LFE pause it, exactly like Auto." />
+                                              IsChecked="{Binding GameLfeGen, Mode=TwoWay}" IsEnabled="{Binding DedicatedSub}" />
+                                    <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap" Text="{Binding GameLfeText}" />
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -1056,7 +1103,63 @@
                 </Grid>
             </TabItem>
 
-            <!-- Setup guide -->
+            <!-- v1.4.0: Engine Settings (was the "Application & Engine" card of the Output tab). v1.5.0: second to last, before the Setup guide. -->
+            <TabItem Header="Engine Settings">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel MaxWidth="900" HorizontalAlignment="Left">
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="APPLICATION &amp; ENGINE" Style="{StaticResource Caption}" />
+                                <CheckBox Content="Start LegacyAVR with Windows (in the tray)" IsChecked="{Binding StartWithWindows, Mode=TwoWay}" />
+                                <CheckBox Content="Stop the engine when exiting from the tray" IsChecked="{Binding StopEngineOnExit, Mode=TwoWay}" />
+                                <CheckBox Content="Apply the last used profile when LegacyAVR starts" IsChecked="{Binding ApplyLastProfileAtStartup, Mode=TwoWay}"
+                                          ToolTip="Only settings that differ are sent. If the profile's output is not connected, nothing is applied and you are told why." />
+                                <WrapPanel Margin="0,10,0,0">
+                                    <Button Content="{Binding AudioButtonText}" Command="{Binding ToggleAudioCommand}" Margin="0,0,8,6" />
+                                    <Button Content="Restart engine" Command="{Binding RestartEngineCommand}" Margin="0,0,8,6"
+                                            ToolTip="Re-open the input and output devices with the current settings" />
+                                    <Button Content="Shut down engine" Command="{Binding ShutdownEngineCommand}" Margin="0,0,8,6"
+                                            IsEnabled="{Binding CanShutdownEngine}" />
+                                    <Button Content="Open log folder" Command="{Binding OpenLogCommand}" Margin="0,0,8,6" />
+                                </WrapPanel>
+                                <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                                           Text="Stop audio pipeline releases the HDMI/optical output but keeps the engine ready. Shut down engine exits the AVREngine process (Start engine brings it back). In service mode only Stop audio pipeline is available; manage the service from Windows Services." />
+                            </StackPanel>
+                        </Border>
+                        <!-- v1.5.0: emergency reset -->
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16" BorderBrush="{StaticResource Danger}">
+                            <StackPanel>
+                                <TextBlock Text="EMERGENCY RESET" Style="{StaticResource Caption}" Foreground="{StaticResource Danger}" />
+                                <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,0,0,8" TextWrapping="Wrap"
+                                           Text="For when the engine or the dashboard stops responding. Both buttons ask first, close LegacyAVR and force-stop every LegacyAVR encoder engine process (AVREngine). Settings and profiles are kept. A Windows service engine needs administrator rights to stop - you are told if it keeps running." />
+                                <WrapPanel>
+                                    <Button Content="Emergency reset (stop and restart LegacyAVR)" Command="{Binding EmergencyRestartCommand}" Margin="0,0,8,6"
+                                            ToolTip="Close LegacyAVR, stop the engine processes, then start LegacyAVR again (which starts a fresh engine)" />
+                                    <Button Content="Close LegacyAVR and stop the engine" Command="{Binding EmergencyStopCommand}" Margin="0,0,8,6"
+                                            ToolTip="Close LegacyAVR and stop the engine processes without restarting" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="CPU / LATENCY DISPLAY" Style="{StaticResource Caption}" />
+                                <Border Background="{StaticResource Surface}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12"
+                                        Padding="2" HorizontalAlignment="Left" Margin="0,4,0,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <RadioButton Style="{StaticResource Segment}" GroupName="StatsEngine" Content="Avg" IsChecked="{Binding StatsAverage, Mode=TwoWay}" />
+                                        <RadioButton Style="{StaticResource Segment}" GroupName="StatsEngine" Content="Live" IsChecked="{Binding StatsLive, Mode=TwoWay}" />
+                                        <RadioButton Style="{StaticResource Segment}" GroupName="StatsEngine" Content="Off" IsChecked="{Binding StatsOff, Mode=TwoWay}" />
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                                           Text="Same switch as next to the CPU / latency readout at the top: 10-second average, live value, or hidden." />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- Setup guide. v1.5.0: always the last tab. -->
             <TabItem Header="Setup guide">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel MaxWidth="1200">
@@ -1105,47 +1208,6 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <!-- v1.4.0: Engine Settings (was the "Application & Engine" card of the Output tab). Always the last tab. -->
-            <TabItem Header="Engine Settings">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel MaxWidth="900" HorizontalAlignment="Left">
-                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
-                            <StackPanel>
-                                <TextBlock Text="APPLICATION &amp; ENGINE" Style="{StaticResource Caption}" />
-                                <CheckBox Content="Start LegacyAVR with Windows (in the tray)" IsChecked="{Binding StartWithWindows, Mode=TwoWay}" />
-                                <CheckBox Content="Stop the engine when exiting from the tray" IsChecked="{Binding StopEngineOnExit, Mode=TwoWay}" />
-                                <CheckBox Content="Apply the last used profile when LegacyAVR starts" IsChecked="{Binding ApplyLastProfileAtStartup, Mode=TwoWay}"
-                                          ToolTip="Only settings that differ are sent. If the profile's output is not connected, nothing is applied and you are told why." />
-                                <WrapPanel Margin="0,10,0,0">
-                                    <Button Content="{Binding AudioButtonText}" Command="{Binding ToggleAudioCommand}" Margin="0,0,8,6" />
-                                    <Button Content="Restart engine" Command="{Binding RestartEngineCommand}" Margin="0,0,8,6"
-                                            ToolTip="Re-open the input and output devices with the current settings" />
-                                    <Button Content="Shut down engine" Command="{Binding ShutdownEngineCommand}" Margin="0,0,8,6"
-                                            IsEnabled="{Binding CanShutdownEngine}" />
-                                    <Button Content="Open log folder" Command="{Binding OpenLogCommand}" Margin="0,0,8,6" />
-                                </WrapPanel>
-                                <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
-                                           Text="Stop audio pipeline releases the HDMI/optical output but keeps the engine ready. Shut down engine exits the AVREngine process (Start engine brings it back). In service mode only Stop audio pipeline is available; manage the service from Windows Services." />
-                            </StackPanel>
-                        </Border>
-                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
-                            <StackPanel>
-                                <TextBlock Text="CPU / LATENCY DISPLAY" Style="{StaticResource Caption}" />
-                                <Border Background="{StaticResource Surface}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12"
-                                        Padding="2" HorizontalAlignment="Left" Margin="0,4,0,0">
-                                    <StackPanel Orientation="Horizontal">
-                                        <RadioButton Style="{StaticResource Segment}" GroupName="StatsEngine" Content="Avg" IsChecked="{Binding StatsAverage, Mode=TwoWay}" />
-                                        <RadioButton Style="{StaticResource Segment}" GroupName="StatsEngine" Content="Live" IsChecked="{Binding StatsLive, Mode=TwoWay}" />
-                                        <RadioButton Style="{StaticResource Segment}" GroupName="StatsEngine" Content="Off" IsChecked="{Binding StatsOff, Mode=TwoWay}" />
-                                    </StackPanel>
-                                </Border>
-                                <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
-                                           Text="Same switch as next to the CPU / latency readout at the top: 10-second average, live value, or hidden." />
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
 
         </TabControl>
 
@@ -1155,6 +1217,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -1168,10 +1231,19 @@
                 </StackPanel>
                 <TextBlock Grid.Column="1" Text="{Binding LastCommandError}" Style="{StaticResource Mono}" Foreground="{StaticResource Warn}"
                            HorizontalAlignment="Right" VerticalAlignment="Center" Margin="12,0,16,0" TextTrimming="CharacterEllipsis" />
+                <!-- v1.5.0: quick save - shown when the settings differ from the active profile -->
+                <Button Grid.Column="2" Style="{StaticResource SmallButton}" Command="{Binding QuickSaveProfileCommand}" Margin="0,0,10,0"
+                        VerticalAlignment="Center" ToolTip="{Binding QuickSaveTooltip}" AutomationProperties.Name="Save profile"
+                        Visibility="{Binding IsProfileDirty, Converter={StaticResource BoolToVis}}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE74E;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="13" VerticalAlignment="Center" />
+                        <TextBlock Text=" Save" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
                 <!-- v1.2.0: subwoofer present or not (default on) -->
-                <Border Grid.Column="2" Background="{StaticResource Surface}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12"
+                <Border Grid.Column="3" Background="{StaticResource Surface}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12"
                         Padding="10,2" VerticalAlignment="Center"
-                        ToolTip="Active: you have a subwoofer (5.1 with LFE). Inactive: no subwoofer - LegacyAVR sends 5.0 and plays the LFE through the front speakers. The brackets show the channels being output right now. Changing it re-opens the output.">
+                        ToolTip="Active: you have a subwoofer (5.1 / 3.1 with LFE). Inactive: no subwoofer - LegacyAVR sends 5.0 / 3.0, generates no LFE and folds the source's own LFE into the front speakers. The brackets show the channels being output right now. Changing it re-opens the output.">
                     <CheckBox Content="{Binding SubToggleText}" IsChecked="{Binding DedicatedSub, Mode=TwoWay}" Margin="0,2" />
                 </Border>
             </Grid>

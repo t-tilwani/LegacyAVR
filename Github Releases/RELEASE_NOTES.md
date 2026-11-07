@@ -1,4 +1,4 @@
-# LegacyAVR 1.4.0 - release notes and installation guide
+# LegacyAVR 1.5.0 - release notes and installation guide
 
 LegacyAVR encodes your PC's surround sound to Dolby Digital, DTS or Dolby Digital Plus in real time, so an
 older AV receiver, soundbar or TV connected by optical or HDMI ARC plays real 5.1 instead of stereo.
@@ -7,6 +7,29 @@ older AV receiver, soundbar or TV connected by optical or HDMI ARC plays real 5.
 > Releases are **not code-signed**, so Windows SmartScreen may warn you the first time (see step 3).
 
 ---
+
+## What's new in 1.5.0
+
+- **No subwoofer, no generated LFE.** With "Dedicated subwoofer" inactive, LegacyAVR no longer creates an LFE
+  channel: the Dynamic 3.1 upmix is sent as real **3.0** (Dolby Digital / DD+), 5.1 as **5.0**, and 3.0 / 5.0 /
+  7.0 sources stay without one. An LFE the source already has is **folded into the front speakers** (120 Hz
+  low-pass, -3 dB each so its power is kept, safety limiter against clipping) - or discarded if you choose.
+- **One LFE switch, two clear meanings:** with a subwoofer it controls LFE generation; without one it controls
+  whether the source's LFE is folded into the fronts. Labels, Settings guide, status indicators and the live
+  processing text say which, e.g. "Stereo → 3.0 upmix" (no longer "3.1" without a subwoofer),
+  "5.1 → 5.0 (no LFE channel out) | LFE → front L/R".
+- **Honest layouts.** Dolby Digital and DD+ now send real 3.0 / 3.1 for the 3.x upmix. DTS has no 3.x layout, so
+  the dashboard says "in a 5.0 stream, surrounds silent". 7.0 / 7.1 cannot be sent as seven channels (the bus and
+  encoders stop at 5.1): they are folded to 5.x and labelled as a fold-down; a 7.1 PCM device is shown as
+  "5.1 in 7.1". PCM 2.0 folds the source LFE before the stereo downmix instead of dropping it.
+- **Error banner:** the text can be selected and copied, and an **Open log folder** button opens the engine log.
+- **Emergency reset** (Engine Settings): closes LegacyAVR, force-stops the engine processes and restarts -
+  or just closes and stops.
+- **Custom EQ indicator** in the live output card, and the EQ dialog's channel box now shows the channel name.
+- **Quick save:** a Save button appears in the footer when the settings differ from the active profile
+  (overwrites it, or asks for a name and creates a new profile for this output).
+- New-install defaults: **Game Mode off**, **LFE generation while gaming on**. Upgrades keep your settings.
+- The **Setup guide** is now the last tab. Many smaller fixes (see the change log).
 
 ## What's new in 1.4.0
 
@@ -43,9 +66,9 @@ The full version history is in the repository's change log.
 
 From the **Assets** section of this release, download:
 
-- `LegacyAVR_v1.4.0_Setup.exe` - the installer (recommended).
+- `LegacyAVR_v1.5.0_Setup.exe` - the installer (recommended).
 - `SHA256SUMS.txt` - checksums used to verify the download.
-- Optional: `LegacyAVR_v1.4.0_Portable.zip` - the same program without an installer, for advanced users.
+- Optional: `LegacyAVR_v1.5.0_Portable.zip` - the same program without an installer, for advanced users.
 
 Only download LegacyAVR from this project's GitHub Releases page.
 
@@ -55,7 +78,7 @@ Checking the checksum confirms the file was not corrupted or altered. In **Power
 you saved the files:
 
 ```powershell
-Get-FileHash .\LegacyAVR_v1.4.0_Setup.exe -Algorithm SHA256
+Get-FileHash .\LegacyAVR_v1.5.0_Setup.exe -Algorithm SHA256
 Get-Content .\SHA256SUMS.txt
 ```
 
@@ -63,13 +86,13 @@ The `Hash` value printed by the first command must match the value next to the f
 exactly (upper/lower case does not matter). To compare automatically:
 
 ```powershell
-$file     = 'LegacyAVR_v1.4.0_Setup.exe'
+$file     = 'LegacyAVR_v1.5.0_Setup.exe'
 $expected = ((Get-Content .\SHA256SUMS.txt) -match [regex]::Escape($file) | Select-Object -First 1).Split(' ')[0]
 $actual   = (Get-FileHash ".\$file" -Algorithm SHA256).Hash
 if ($actual -ieq $expected) { 'OK - checksum matches' } else { 'MISMATCH - do not run this file' }
 ```
 
-Command Prompt alternative: `certutil -hashfile LegacyAVR_v1.4.0_Setup.exe SHA256`
+Command Prompt alternative: `certutil -hashfile LegacyAVR_v1.5.0_Setup.exe SHA256`
 
 **If the checksums do not match, delete the file and do not run it.**
 
@@ -78,7 +101,7 @@ Command Prompt alternative: `certutil -hashfile LegacyAVR_v1.4.0_Setup.exe SHA25
 
 ## 3. Install
 
-1. Run `LegacyAVR_v1.4.0_Setup.exe`. Releases are not code-signed, so if SmartScreen shows "Windows protected
+1. Run `LegacyAVR_v1.5.0_Setup.exe`. Releases are not code-signed, so if SmartScreen shows "Windows protected
    your PC", choose **More info -> Run anyway** only if you verified the checksum in step 2.
 2. Follow the prompts. Setup installs to `C:\Program Files\LegacyAVR`, adds **LegacyAVR** to the Start menu
    and, if you tick it, the desktop.

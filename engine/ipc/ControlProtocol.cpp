@@ -65,6 +65,7 @@ Request parseRequest(std::string_view line) {
         {"SET_BASS", Cmd::SetBass}, {"SET_SUB", Cmd::SetSub}, {"SET_LFE_GEN", Cmd::SetLfeGen},
         {"SET_GAMING", Cmd::SetGaming}, {"GAME_DETECTED", Cmd::GameDetected},
         {"SET_GAME_LFE", Cmd::SetGameLfe}, {"SET_LFE_RESET", Cmd::SetLfeReset},
+        {"SET_LFE_FOLD", Cmd::SetLfeFold},
         {"SET_EQ", Cmd::SetEq}, {"SET_EQ_CHANNEL", Cmd::SetEqChannel}, {"SET_EQ_BAND", Cmd::SetEqBand},
         {"RESET_EQ_CHANNEL", Cmd::ResetEqChannel}, {"SET_AUDITION", Cmd::SetAudition},
     };

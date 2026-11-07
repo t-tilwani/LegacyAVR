@@ -46,6 +46,8 @@ enum TelemetryFlags2 : uint32_t {
     TF2_LfeGameOverride = 1u << 6,   // v4: ...and is currently overriding the general setting
     TF2_LfeInhibited    = 1u << 7,   // v4: native-LFE latch set (Auto generation paused)
     TF2_EqEnabled       = 1u << 8,   // v5: Custom EQ master switch is on (the bass control is replaced)
+    TF2_LfeFold         = 1u << 9,   // v1.5.0: "LFE fold" on - source LFE is folded into FL/FR when the output has no LFE
+    TF2_NoLfeOutput     = 1u << 10,  // v1.5.0: the running output has no LFE channel (no subwoofer, or PCM 2.0)
 };
 
 #pragma pack(push, 1)
@@ -141,7 +143,7 @@ struct TelemetryBlock {
     uint32_t bufferMsSetting;       // 1124 user setting, 0 = automatic
     float emitPeakDb[8];            // 1128
     float emitRmsDb[8];             // 1160
-    float lfeFoldPeakDb;            // 1192 no subwoofer: LFE folded into the fronts
+    float lfeFoldPeakDb;            // 1192 no LFE output: source LFE level (folded or discarded)
     float lfeFoldRmsDb;             // 1196
     char processingText[96];        // 1200 e.g. "Stereo -> 5.1 upmix"
     char pcmSwitchText[128];        // 1296 lossless-stereo switch status / reason
@@ -150,7 +152,7 @@ struct TelemetryBlock {
     uint32_t lfeStatus;             // 1488 avr::LfeStatus
     float lfeResetSeconds;          // 1492 silence needed to release the native-LFE latch
     float lfeSilenceSeconds;        // 1496 silence so far while the latch is set
-    char lfeStatusText[96];         // 1500 e.g. "From the source -> folded into FL/FR"
+    char lfeStatusText[96];         // 1500 e.g. "Source LFE -> folded into front L/R ..."
     // ---- v5 (LegacyAVR 1.4.0) ---------------------------------------------------------
     float eqHeadroomDb;             // 1596 level taken off every channel so EQ boosts cannot clip (<= 0)
     int32_t auditionChannel;        // 1600 EQ audition: soloed bus channel, -1 = off

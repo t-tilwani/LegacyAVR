@@ -1,3 +1,5 @@
+using LegacyAVR.UI.Interop;
+
 namespace LegacyAVR.UI.Services;
 
 /// <summary>
@@ -17,6 +19,13 @@ public static class FactoryDefaults
     public const double SurroundDelayMs = 12.0;
     public const double LfeCrossoverHz = 80.0;
     public const double LfeLevelDb = -10.0;
+
+    // v1.5.0 defaults for new installs and resets (an existing engine.cfg keeps its own values):
+    // Game Mode off, "LFE generation while gaming" on, and - without a subwoofer - the source's
+    // LFE folded into the front speakers so nothing is lost.
+    public const GamingKind Gaming = GamingKind.Off;
+    public const bool GameLfeGen = true;
+    public const bool LfeFold = true;
 
     // Native-LFE "resume after silence": whole seconds from 1 to 300, 10 recommended.
     public const double LfeResetSeconds = 10.0;

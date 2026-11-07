@@ -129,7 +129,8 @@ public sealed class DiagnosticsViewModel : ObservableObject
             Title = s[0].Title,
             Signal = s[0].Signal,
             Instructions = "Plays -20 dBFS pink noise on the selected speakers. There is no subwoofer, so the LFE noise is " +
-                           "folded into the front left and right speakers. Enable one speaker at a time and use an SPL meter " +
+                           "folded into the front left and right speakers (low-passed at 120 Hz, -3 dB each; silent if the LFE " +
+                           "setting is 'discard'). Enable one speaker at a time and use an SPL meter " +
                            "(or phone app, C-weighted, slow) at the listening position, then trim each speaker on the Mixer tab.",
             ExpectedResult = "Every speaker reads within +/-1 dB of the others. With only 'LFE\u2192fronts' enabled, the bass " +
                              "comes from the front pair.",

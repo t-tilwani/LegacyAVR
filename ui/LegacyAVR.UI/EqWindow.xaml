@@ -76,7 +76,15 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
             <TextBlock Text="Channel  " Style="{StaticResource Dim}" VerticalAlignment="Center" />
-            <ComboBox Grid.Column="1" ItemsSource="{Binding Main.EqChannels}" SelectedItem="{Binding Channel, Mode=TwoWay}" DisplayMemberPath="Name" />
+            <!-- v1.5.0: an explicit item template (not DisplayMemberPath) so the closed box shows the same
+                 channel name as the list - the themed ComboBox ignored DisplayMemberPath in its selection box. -->
+            <ComboBox Grid.Column="1" ItemsSource="{Binding Main.EqChannels}" SelectedItem="{Binding Channel, Mode=TwoWay}">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding Name}" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
             <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                 <CheckBox Content="Custom EQ (all channels)" IsChecked="{Binding Main.EqEnabled, Mode=TwoWay}" Margin="0,0,18,0"
                           ToolTip="Master switch. Off = every channel flat (bypassed); your settings are kept." />

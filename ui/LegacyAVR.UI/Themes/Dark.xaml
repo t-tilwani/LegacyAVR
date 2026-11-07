@@ -249,6 +249,25 @@
         </Setter>
     </Style>
 
+    <!-- v1.5.0: read-only text that can be selected and copied (error banner) -->
+    <Style x:Key="SelectableText" TargetType="TextBox">
+        <Setter Property="IsReadOnly" Value="True" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Foreground" Value="{StaticResource Text}" />
+        <Setter Property="CaretBrush" Value="{StaticResource Text}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" Focusable="False"
+                                  HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ============================================================ combo box -->
     <ControlTemplate x:Key="ComboToggle" TargetType="ToggleButton">
         <Border x:Name="b" Background="{StaticResource Surface2}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6">
@@ -274,7 +293,9 @@
                                       IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}" />
                         <ContentPresenter Margin="10,0,30,0" VerticalAlignment="Center" IsHitTestVisible="False"
                                           Content="{TemplateBinding SelectionBoxItem}"
-                                          ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" />
+                                          ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                          ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                          ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}" />
                         <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True"
                                Focusable="False" PopupAnimation="Fade">
                             <Border Background="{StaticResource Surface2}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6"

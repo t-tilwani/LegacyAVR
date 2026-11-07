@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "legacyavr",
-  "version-string": "1.4.0",
+  "version-string": "1.5.0",
   "description": "LegacyAVR - real-time Dolby Digital / DTS / E-AC-3 encoder engine for Windows",
   "builtin-baseline": "15b12b99a227d51e21c86dffd40385439eac87a0",
   "dependencies": [

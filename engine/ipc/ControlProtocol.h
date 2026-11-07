@@ -29,6 +29,9 @@
 //   SET_BASS <dB>                         bass shelf on every channel, -12..+12      (v1.2.0)
 //   SET_SUB 0|1                           dedicated subwoofer active (1) / inactive (0) (v1.2.0)
 //   SET_LFE_GEN OFF|AUTO|ALWAYS           5.0 -> 5.1 LFE generation                   (v1.2.0)
+//                                         (v1.5.0: only with a dedicated subwoofer)
+//   SET_LFE_FOLD 0|1                      output without an LFE channel: fold the source's
+//                                         LFE into FL/FR (1, default) or discard it (0) (v1.5.0)
 //   SET_GAMING AUTO|ON|OFF                game handling mode                          (v1.2.0)
 //   SET_GAME_LFE 0|1                      Game Mode's own LFE generation toggle       (v1.3.0)
 //   SET_LFE_RESET <seconds>               native-LFE latch reset interval: whole seconds
@@ -67,7 +70,7 @@ enum class Cmd {
     SetInputDevice, SetOutputDevice, SetCodec, SetBitrate, SetOutputMode, SetBufferMs,
     SetUpmix, SetUpmixParam, SetStereoAs20, SetNightMode, SetMaster, SetGain, SetMute, SetMuteAll,
     Test, Restart, Shutdown, StopAudio, StartAudio,
-    SetBass, SetSub, SetLfeGen, SetGaming, GameDetected, SetGameLfe, SetLfeReset,
+    SetBass, SetSub, SetLfeGen, SetGaming, GameDetected, SetGameLfe, SetLfeReset, SetLfeFold,
     SetEq, SetEqChannel, SetEqBand, ResetEqChannel, SetAudition,
 };
 

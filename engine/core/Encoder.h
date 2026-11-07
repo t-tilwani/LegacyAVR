@@ -36,10 +36,13 @@ public:
     AudioEncoder(const AudioEncoder&) = delete;
     AudioEncoder& operator=(const AudioEncoder&) = delete;
 
-    // channels: 2 (stereo), 5 (5.0, no LFE - v1.2.0) or 6 (5.1). Not real-time.
+    // channels: 2 (stereo), 3 (3.0) / 4 (3.1) - AC-3 / E-AC-3 only, v1.5.0 -, 5 (5.0, no
+    // LFE - v1.2.0) or 6 (5.1). FFmpeg's DTS encoder has no 3.x layout. Not real-time.
+    // supportsChannels() answers without opening anything.
     bool open(Codec codec, uint32_t bitrate, int channels, std::string& error);
     void close() noexcept;
     [[nodiscard]] bool isOpen() const noexcept { return ctx_ != nullptr; }
+    [[nodiscard]] static bool supportsChannels(Codec codec, int channels) noexcept;
 
     // Encodes exactly kBlockFrames (1536) frames of planar float audio
     // (`channels()` planes). DTS is fed as three 512-sample codec frames.

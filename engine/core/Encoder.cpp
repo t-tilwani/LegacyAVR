@@ -51,7 +51,7 @@ uint32_t normaliseBitrate(Codec codec, uint32_t requested, int channels) noexcep
             static constexpr std::array<uint32_t, 19> rates{
                 32000, 40000, 48000, 56000, 64000, 80000, 96000, 112000, 128000, 160000,
                 192000, 224000, 256000, 320000, 384000, 448000, 512000, 576000, 640000};
-            const uint32_t floor = channels >= 5 ? 384000u : 96000u;   // sensible quality floor
+            const uint32_t floor = channels >= 5 ? 384000u : channels >= 3 ? 256000u : 96000u;   // quality floor
             uint32_t best = rates.back();
             for (uint32_t r : rates) if (r <= requested) best = r;
             return std::max(best, floor);
@@ -104,10 +104,23 @@ int AudioEncoder::getEncodeBuffer(AVCodecContext* ctx, AVPacket* pkt, int flags)
     return 0;
 }
 
+bool AudioEncoder::supportsChannels(Codec codec, int channels) noexcept {
+    switch (codec) {
+        case Codec::AC3:
+        case Codec::EAC3: return channels == 2 || (channels >= 3 && channels <= 6);
+        case Codec::DTS: return channels == 2 || channels == 5 || channels == 6;   // FFmpeg dca layouts
+        case Codec::PCM: return false;
+    }
+    return false;
+}
+
 bool AudioEncoder::open(Codec codec, uint32_t bitrate, int channels, std::string& error) {
     close();
     if (codec == Codec::PCM) { error = "PCM does not use an encoder"; return false; }
-    if (channels != 2 && channels != 5 && channels != 6) { error = "encoder supports 2, 5 or 6 channels"; return false; }
+    if (!supportsChannels(codec, channels)) {
+        error = "this encoder does not support " + std::to_string(channels) + " channels";
+        return false;
+    }
 
     const char* name = codec == Codec::AC3 ? "ac3" : codec == Codec::EAC3 ? "eac3" : "dca";
     const AVCodec* c = avcodec_find_encoder_by_name(name);
@@ -121,14 +134,17 @@ bool AudioEncoder::open(Codec codec, uint32_t bitrate, int channels, std::string
     bitrate_ = normaliseBitrate(codec, bitrate, channels);
     // Bus plane feeding each encoder channel (FFmpeg native order). 5.0 (v1.2.0, used when
     // there is no subwoofer) skips the LFE plane: FL FR FC SL SR.
+    // v1.5.0: 3.0 = FL FR FC, 3.1 = FL FR FC LFE (AC-3 acmod 3/0, with or without the LFE flag).
     static constexpr std::array<uint8_t, 6> kMap51{FL, FR, FC, LFE, SL, SR};
     static constexpr std::array<uint8_t, 6> kMap50{FL, FR, FC, SL, SR, 0};
-    planeMap_ = channels == 5 ? kMap50 : kMap51;
+    planeMap_ = channels == 5 ? kMap50 : kMap51;   // 2, 3 and 4 channels use a prefix of kMap51
 
     ctx_->sample_rate = int(kBusRate);
     av_channel_layout_uninit(&ctx_->ch_layout);
     av_channel_layout_from_mask(&ctx_->ch_layout, channels == 6   ? AV_CH_LAYOUT_5POINT1
                                                   : channels == 5 ? AV_CH_LAYOUT_5POINT0
+                                                  : channels == 4 ? AV_CH_LAYOUT_3POINT1
+                                                  : channels == 3 ? AV_CH_LAYOUT_SURROUND
                                                                   : AV_CH_LAYOUT_STEREO);
     ctx_->sample_fmt = codec == Codec::DTS ? AV_SAMPLE_FMT_S32 : AV_SAMPLE_FMT_FLTP;
     ctx_->bit_rate = bitrate_;

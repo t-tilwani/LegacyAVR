@@ -205,10 +205,13 @@ public class OutputLayoutTests
     [InlineData(0x60Fu, 6u, false, "5.0")]    // same stream, LFE folded into the fronts
     [InlineData(0x607u, 5u, false, "5.0")]    // 5.0 bitstream
     [InlineData(0x3u, 2u, true, "2.0")]
-    [InlineData(0x63Fu, 8u, true, "7.1")]
+    [InlineData(0x7u, 3u, false, "3.0")]      // v1.5.0: AC-3 / DD+ 3.0 without a subwoofer
+    [InlineData(0xFu, 4u, true, "3.1")]       // v1.5.0: AC-3 / DD+ 3.1
+    [InlineData(0x63Fu, 8u, true, "5.1 in 7.1")]    // the bus is 5.1: a 7.1 device has a silent back pair
+    [InlineData(0x63Fu, 8u, false, "5.0 in 7.1")]
     [InlineData(0u, 0u, true, "")]            // passthrough / stopped: unknown
-    public void Layout(uint mask, uint channels, bool sub, string expected) =>
-        Assert.Equal(expected, MainViewModel.OutputLayout(mask, channels, sub));
+    public void Layout(uint mask, uint channels, bool lfeOut, string expected) =>
+        Assert.Equal(expected, MainViewModel.OutputLayout(mask, channels, lfeOut));
 
     [Fact]
     public void SubLabel()
