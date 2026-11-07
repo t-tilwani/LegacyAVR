@@ -33,7 +33,11 @@
       <TreatWarningAsError>false</TreatWarningAsError>
       <SDLCheck>true</SDLCheck>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalOptions>/utf-8 /Zc:__cplusplus /Zc:preprocessor /external:anglebrackets /external:W0 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/utf-8 /Zc:__cplusplus /Zc:preprocessor %(AdditionalOptions)</AdditionalOptions>
+      <!-- Third-party headers (#include <...>, e.g. FFmpeg) build without warnings. Set as properties rather than
+           /external:* switches so MSBuild does not also pass its default /external:W4 (warning D9025). -->
+      <TreatAngleIncludeAsExternal>true</TreatAngleIncludeAsExternal>
+      <ExternalWarningLevel>TurnOffAllWarnings</ExternalWarningLevel>
       <!-- No _WIN32_WINNT / NTDDI_VERSION override: the Windows 11 SDK defaults expose
            the newest APIs (power throttling, SetThreadDescription). -->
       <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>

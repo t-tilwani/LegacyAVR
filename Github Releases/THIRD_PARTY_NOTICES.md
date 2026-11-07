@@ -11,8 +11,9 @@ component is, how LegacyAVR uses it, and what a **binary release** of LegacyAVR 
 |---|---|---|---|
 | FFmpeg `libavcodec`, `libavutil`, `libswresample` | GNU LGPL v2.1 or later | Audio encoding and resampling, **dynamically linked** DLLs | Yes - as separate, replaceable DLLs |
 | Microsoft Windows SDK / OS components (WASAPI, MMDevice, AVRT, SAPI, Shell, COM) | Windows SDK licence terms | Import libraries at build time; system DLLs at run time | No - part of Windows |
-| Microsoft Visual C++ runtime | Visual Studio licence ("Distributable Code") | C++ runtime of the engine | Not bundled by default; users install the official redistributable |
-| .NET 10 (incl. WPF, Windows Forms) | MIT | Dashboard runtime | No - framework-dependent; users install the .NET 10 Desktop Runtime |
+| Microsoft Visual C++ Redistributable | Visual Studio licence ("Distributable Code") | C++ runtime of the engine | Setup only: Microsoft's unmodified `vc_redist.x64.exe` is embedded and run if the runtime is missing; not in the portable zip |
+| .NET 10 (incl. WPF, Windows Forms) | MIT | Dashboard runtime | No - framework-dependent; the installer downloads Microsoft's .NET 10 Desktop Runtime installer if it is missing |
+| Inno Setup | Inno Setup License | Creates the Windows installer | Its setup program is part of `LegacyAVR_v<version>_Setup.exe` |
 | vcpkg | MIT | Build tool: builds FFmpeg | No |
 | CMake | BSD 3-Clause | Optional build tool | No |
 | xUnit, xunit.runner.visualstudio | Apache 2.0 | .NET unit tests only | No |
@@ -47,6 +48,11 @@ developers - <https://ffmpeg.org>.
    `LGPL version 2.1 or later`.
 3. Note the exact FFmpeg version (`vcpkg list ffmpeg`) for the release notes.
 
+`.\scripts\build.ps1 -Package` automates most of this: it stops if the installed FFmpeg has the `gpl`,
+`version3` or `nonfree` feature, ships the three DLLs as separate files, and puts `licenses\FFmpeg-LICENSE.txt`
+(the licence text from the vcpkg port), `licenses\FFmpeg-SOURCE.txt` (exact version, source and build-recipe
+links) and this file into both the installer and the portable zip.
+
 **What every binary release must include to comply with the LGPL v2.1:**
 
 - [ ] The FFmpeg DLLs as separate files (`avcodec-*.dll`, `avutil-*.dll`, `swresample-*.dll`) - never
@@ -74,18 +80,23 @@ Windows itself; LegacyAVR only links against the import libraries from the Windo
 
 **Microsoft Visual C++ runtime.** The engine needs the Visual C++ runtime DLLs (for example `vcruntime140.dll`,
 `msvcp140.dll`). The Visual Studio licence permits redistributing the files listed in its "Distributable Code"
-/ `redist.txt`, unmodified, together with your application. LegacyAVR releases **do not bundle** them by
-default; users install the official **Microsoft Visual C++ Redistributable (x64)**:
-<https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist>. If a future release does bundle them,
-check the redistribution terms of the Visual Studio edition used to build it.
+/ `redist.txt` (which includes `vc_redist.x64.exe`), unmodified, together with your application.
+`LegacyAVR_v<version>_Setup.exe` embeds Microsoft's unmodified `vc_redist.x64.exe` from the Visual Studio
+installation that built the engine, and runs it only when the PC's runtime is missing or older than that
+version; the runtime DLLs are never copied into LegacyAVR's folder. (If a build machine has no
+`vc_redist.x64.exe`, the installer instead downloads the latest one from <https://aka.ms/vc14/vc_redist.x64.exe>
+and checks its Microsoft signature.) The portable zip does not include it: users install the official
+**Microsoft Visual C++ Redistributable (x64)** from <https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist>.
 
 **.NET 10, WPF and Windows Forms** are open source under the MIT License (<https://github.com/dotnet>).
 The dashboard is framework-dependent: users install the **.NET 10 Desktop Runtime (x64)**, so the runtime is
-not redistributed.
+not redistributed. If it is missing, the installer offers to download Microsoft's .NET 10 Desktop Runtime
+installer (the URL is taken from Microsoft's .NET release metadata when the installer is built), checks its
+Microsoft signature and runs it.
 
 ---
 
-## 3. Build and test tools (not redistributed)
+## 3. Build, test and packaging tools
 
 - **vcpkg** - MIT License, © Microsoft Corporation. <https://github.com/microsoft/vcpkg>
 - **CMake** - BSD 3-Clause, © Kitware, Inc. and contributors. <https://cmake.org>
@@ -94,6 +105,11 @@ not redistributed.
 - **Microsoft.NET.Test.Sdk** - MIT License, © Microsoft Corporation.
 
 These are used only to build and test LegacyAVR and are not part of a release package.
+
+**Inno Setup** - © Jordan Russell and Martijn Laan, <https://jrsoftware.org/isinfo.php>, used under the Inno
+Setup License to build the installer; the setup and uninstall programs inside `LegacyAVR_v<version>_Setup.exe`
+come from Inno Setup. Inno Setup is free for non-commercial use, which covers this hobby project; see
+<https://jrsoftware.org/isorder.php> for when a commercial licence is expected.
 
 ---
 

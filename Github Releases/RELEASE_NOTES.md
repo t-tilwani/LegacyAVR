@@ -28,12 +28,14 @@ The full version history is in the repository's change log.
 ## Before you start - requirements
 
 - Windows 11, 64-bit.
-- **.NET 10 Desktop Runtime (x64):** <https://dotnet.microsoft.com/download/dotnet/10.0>
-- **Microsoft Visual C++ Redistributable (x64):** <https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist>
 - **VB-Audio Virtual Cable (VB-CABLE)**, free / donationware from VB-Audio Software:
   <https://vb-audio.com/Cable/> (not included with LegacyAVR).
 - An HDMI ARC or optical / coaxial output to an AVR, soundbar or TV that decodes Dolby Digital (or DTS).
   Dolby Digital Plus needs HDMI; optical cannot carry it.
+- The **.NET 10 Desktop Runtime (x64)** and the **Microsoft Visual C++ Redistributable (x64)**. The installer
+  checks for both and offers to install them: the Visual C++ Redistributable is included in Setup, the .NET
+  runtime is downloaded from Microsoft. (Portable zip: install them yourself -
+  <https://dotnet.microsoft.com/download/dotnet/10.0> and <https://aka.ms/vc14/vc_redist.x64.exe>.)
 
 ---
 
@@ -41,8 +43,9 @@ The full version history is in the repository's change log.
 
 From the **Assets** section of this release, download:
 
-- `LegacyAVR-1.4.0-win-x64.zip` - the program.
+- `LegacyAVR_v1.4.0_Setup.exe` - the installer (recommended).
 - `SHA256SUMS.txt` - checksums used to verify the download.
+- Optional: `LegacyAVR_v1.4.0_Portable.zip` - the same program without an installer, for advanced users.
 
 Only download LegacyAVR from this project's GitHub Releases page.
 
@@ -52,7 +55,7 @@ Checking the checksum confirms the file was not corrupted or altered. In **Power
 you saved the files:
 
 ```powershell
-Get-FileHash .\LegacyAVR-1.4.0-win-x64.zip -Algorithm SHA256
+Get-FileHash .\LegacyAVR_v1.4.0_Setup.exe -Algorithm SHA256
 Get-Content .\SHA256SUMS.txt
 ```
 
@@ -60,29 +63,40 @@ The `Hash` value printed by the first command must match the value next to the f
 exactly (upper/lower case does not matter). To compare automatically:
 
 ```powershell
-$expected = (Select-String -Path .\SHA256SUMS.txt -Pattern 'LegacyAVR-1.4.0-win-x64.zip').Line.Split(' ')[0]
-$actual   = (Get-FileHash .\LegacyAVR-1.4.0-win-x64.zip -Algorithm SHA256).Hash
+$file     = 'LegacyAVR_v1.4.0_Setup.exe'
+$expected = ((Get-Content .\SHA256SUMS.txt) -match [regex]::Escape($file) | Select-Object -First 1).Split(' ')[0]
+$actual   = (Get-FileHash ".\$file" -Algorithm SHA256).Hash
 if ($actual -ieq $expected) { 'OK - checksum matches' } else { 'MISMATCH - do not run this file' }
 ```
 
-Command Prompt alternative: `certutil -hashfile LegacyAVR-1.4.0-win-x64.zip SHA256`
+Command Prompt alternative: `certutil -hashfile LegacyAVR_v1.4.0_Setup.exe SHA256`
 
 **If the checksums do not match, delete the file and do not run it.**
 
-> For maintainers: create `SHA256SUMS.txt` when publishing a release with
-> `Get-FileHash *.zip -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } | Set-Content SHA256SUMS.txt`
+> For maintainers: `.\scripts\build.ps1 -Package` creates the installer, the zip and `SHA256SUMS.txt` in
+> `Github Releases\`. Upload all three to the release.
 
 ## 3. Install
 
-1. Right-click the zip -> **Properties** -> tick **Unblock** (if shown) -> OK.
-2. Extract it to a folder you own, for example `%LOCALAPPDATA%\Programs\LegacyAVR`. Keep all files together:
-   the program needs the FFmpeg DLLs next to it.
-3. Run `LegacyAVR.UI.exe`. If SmartScreen shows "Windows protected your PC", choose **More info -> Run
-   anyway** only if you verified the checksum in step 2.
+1. Run `LegacyAVR_v1.4.0_Setup.exe`. Releases are not code-signed, so if SmartScreen shows "Windows protected
+   your PC", choose **More info -> Run anyway** only if you verified the checksum in step 2.
+2. Follow the prompts. Setup installs to `C:\Program Files\LegacyAVR`, adds **LegacyAVR** to the Start menu
+   and, if you tick it, the desktop.
+3. If the Visual C++ Redistributable or the .NET 10 Desktop Runtime is missing, Setup lists it and offers
+   **Install them now** (recommended). The Visual C++ Redistributable is included in Setup; the .NET runtime is
+   downloaded from Microsoft and checked for Microsoft's digital signature before it runs.
+4. *Advanced, optional:* **Run the audio engine as a Windows service** starts encoding at boot, before anyone
+   signs in. Leave it unticked unless you need that.
+5. The last page has a button to download **VB-CABLE**, and one to open the Sound control panel for step 4 below.
 
-The package contains `LegacyAVR.UI.exe` (dashboard), `AVREngine.exe` (audio engine, started automatically),
-`AVREngineService.exe` (optional Windows service), the FFmpeg DLLs, `scripts\install-service.ps1`, and the
-licence files (`LICENSE`, `THIRD_PARTY_NOTICES.md`, the GNU LGPL v2.1 text for FFmpeg).
+**Portable zip instead:** right-click the zip -> **Properties** -> tick **Unblock** (if shown) -> OK, extract it
+to a folder you own (e.g. `%LOCALAPPDATA%\Programs\LegacyAVR`), keep all files together, and run
+`LegacyAVR.UI.exe`.
+
+Both contain `LegacyAVR.UI.exe` (dashboard), `AVREngine.exe` (audio engine, started automatically),
+`AVREngineService.exe` (optional service), the FFmpeg DLLs, `scripts\install-service.ps1`, `README.txt`, and
+`licenses\` (LegacyAVR's MIT licence, third-party notices, the FFmpeg LGPL licence and FFmpeg source
+information).
 
 ## 4. Route the audio (one-time Windows setup)
 
@@ -114,18 +128,22 @@ Closing the window keeps LegacyAVR running in the system tray; use **Exit** in t
 
 ## Upgrading from an earlier version
 
-Exit the old version completely first (tray -> Exit): the 1.4 dashboard and engine cannot talk to older
-versions. Your settings in `%APPDATA%\LegacyAVR\` and `%LOCALAPPDATA%\LegacyAVR\` are kept, and old presets
-are converted to profiles automatically (the original files are left untouched).
+Run the newer Setup. If LegacyAVR is running, Setup closes it first (you can cancel), and your settings in
+`%APPDATA%\LegacyAVR\` and `%LOCALAPPDATA%\LegacyAVR\` are kept. If you used a zip or a self-built copy
+before, exit it first (tray -> Exit) and switch *Start LegacyAVR with Windows* off and on again in the new
+version so it points at the installed copy. Old presets are converted to profiles automatically (the original
+files are left untouched).
 
 ## Uninstall
 
-1. Tray icon -> **Exit**. If you installed the service: elevated PowerShell ->
-   `.\scripts\install-service.ps1 -Uninstall`.
-2. Untick *Start LegacyAVR with Windows* (or remove it from Task Manager -> Startup apps), then delete the
-   program folder.
-3. Optional: delete `%APPDATA%\LegacyAVR` and `%LOCALAPPDATA%\LegacyAVR` (settings, profiles, logs).
-4. Set your normal speakers / HDMI device back as the Windows default playback device.
+1. **Settings -> Apps -> Installed apps -> LegacyAVR -> Uninstall** (or *Uninstall LegacyAVR* in the Start
+   menu). It stops LegacyAVR, removes the service if it was installed, and asks whether to delete your settings,
+   profiles and logs as well.
+2. Set your normal speakers / HDMI device back as the Windows default playback device. VB-CABLE has its own
+   uninstaller.
+
+Portable zip: tray -> **Exit**, untick *Start LegacyAVR with Windows*, delete the folder, and optionally
+`%APPDATA%\LegacyAVR` and `%LOCALAPPDATA%\LegacyAVR`.
 
 ## Known limitations
 
@@ -134,7 +152,8 @@ are converted to profiles automatically (the original files are left untouched).
   create derived surround) and does not bypass DRM.
 - About 70-85 ms of delay before the AVR is normal for live Dolby / DTS encoding.
 - Dolby Digital Plus works only over HDMI to devices that list it; optical cannot carry it.
-- Not code-signed; not affiliated with or certified by Dolby, DTS, VB-Audio or Microsoft.
+- The installer and programs are not code-signed (SmartScreen may warn); not affiliated with or certified by
+  Dolby, DTS, VB-Audio or Microsoft.
 
 ## Getting help
 
