@@ -1,4 +1,4 @@
-# LegacyAVR 1.5.0 - release notes and installation guide
+# LegacyAVR 1.6.0 - release notes and installation guide
 
 LegacyAVR encodes your PC's surround sound to Dolby Digital, DTS or Dolby Digital Plus in real time, so an
 older AV receiver, soundbar or TV connected by optical or HDMI ARC plays real 5.1 instead of stereo.
@@ -7,6 +7,34 @@ older AV receiver, soundbar or TV connected by optical or HDMI ARC plays real 5.
 > Releases are **not code-signed**, so Windows SmartScreen may warn you the first time (see step 3).
 
 ---
+
+## What's new in 1.6.0
+
+- **Experimental features, off by default.** LFE generation (creating a subwoofer channel for 5.0 / stereo
+  sources) and folding a source's LFE into the front speakers without a subwoofer are now **experimental**,
+  switched on in the new *Engine Settings > Experimental* card. Both are off for new installs **and after every
+  update** - including this one, so if you used LFE generation in 1.5, switch it on again there. Your saved
+  choices (Auto / Always / Off, the fold setting, *LFE generation while gaming*, and those in profiles) are kept
+  and come back when you enable the feature; while it is off they are not used. Once enabled, the options
+  appear in *Upmixing & Audio Settings* and the Game Mode card.
+- **No subwoofer: the source's LFE is passed through.** With "Dedicated subwoofer" inactive, a 5.1 source now
+  stays 5.1 and its LFE goes to your AVR, whose bass management (subwoofer set to *None*) redirects it - it is
+  no longer folded or dropped by default. Outputs without an LFE channel (PCM 2.0) still fold it into the fronts,
+  so it is never lost; the 1.5 "discard" choice is gone. Upmixes still create no LFE without a subwoofer
+  (3.0 / 5.0). The live indicator and LFE status say exactly what happens ("LFE passed through",
+  "LFE → front L/R (experimental fold)", "... this output has no LFE channel").
+- **Activation chime:** a short, quiet two-note chime when audio starts with LegacyAVR and after you change the
+  input (only when it worked). Switch it off in Engine Settings. It cannot play during bit-exact passthrough of
+  pre-encoded audio, and the status line says so.
+- **Custom EQ:** type exact frequency, gain and Q values (Enter applies; out-of-range values are refused and
+  marked instead of being clamped), and **Apply to...** copies one band to other channels after a confirmation.
+- **VB-CABLE set-up:** the Setup Guide has a *Download VB-CABLE* button, and the guides now recommend setting
+  the cable to **5.1 Surround** (7.1 still works but is folded down to 5.1).
+  DD+ 7.1 encoding is being investigated but is not currently available.
+- **New look:** the LegacyAVR logo in the header, app icon, tray and installer, and a calmer colour scheme built
+  around the logo's red.
+- **Tabs:** Mixer, Output & Profiles, Upmixing & Audio Settings (was "Upmixing & Bass"), Diagnostics, Engine
+  Settings, Settings Guide, Setup Guide.
 
 ## What's new in 1.5.0
 
@@ -66,9 +94,9 @@ The full version history is in the repository's change log.
 
 From the **Assets** section of this release, download:
 
-- `LegacyAVR_v1.5.0_Setup.exe` - the installer (recommended).
+- `LegacyAVR_v1.6.0_Setup.exe` - the installer (recommended).
 - `SHA256SUMS.txt` - checksums used to verify the download.
-- Optional: `LegacyAVR_v1.5.0_Portable.zip` - the same program without an installer, for advanced users.
+- Optional: `LegacyAVR_v1.6.0_Portable.zip` - the same program without an installer, for advanced users.
 
 Only download LegacyAVR from this project's GitHub Releases page.
 
@@ -78,7 +106,7 @@ Checking the checksum confirms the file was not corrupted or altered. In **Power
 you saved the files:
 
 ```powershell
-Get-FileHash .\LegacyAVR_v1.5.0_Setup.exe -Algorithm SHA256
+Get-FileHash .\LegacyAVR_v1.6.0_Setup.exe -Algorithm SHA256
 Get-Content .\SHA256SUMS.txt
 ```
 
@@ -86,13 +114,13 @@ The `Hash` value printed by the first command must match the value next to the f
 exactly (upper/lower case does not matter). To compare automatically:
 
 ```powershell
-$file     = 'LegacyAVR_v1.5.0_Setup.exe'
+$file     = 'LegacyAVR_v1.6.0_Setup.exe'
 $expected = ((Get-Content .\SHA256SUMS.txt) -match [regex]::Escape($file) | Select-Object -First 1).Split(' ')[0]
 $actual   = (Get-FileHash ".\$file" -Algorithm SHA256).Hash
 if ($actual -ieq $expected) { 'OK - checksum matches' } else { 'MISMATCH - do not run this file' }
 ```
 
-Command Prompt alternative: `certutil -hashfile LegacyAVR_v1.5.0_Setup.exe SHA256`
+Command Prompt alternative: `certutil -hashfile LegacyAVR_v1.6.0_Setup.exe SHA256`
 
 **If the checksums do not match, delete the file and do not run it.**
 
@@ -101,7 +129,7 @@ Command Prompt alternative: `certutil -hashfile LegacyAVR_v1.5.0_Setup.exe SHA25
 
 ## 3. Install
 
-1. Run `LegacyAVR_v1.5.0_Setup.exe`. Releases are not code-signed, so if SmartScreen shows "Windows protected
+1. Run `LegacyAVR_v1.6.0_Setup.exe`. Releases are not code-signed, so if SmartScreen shows "Windows protected
    your PC", choose **More info -> Run anyway** only if you verified the checksum in step 2.
 2. Follow the prompts. Setup installs to `C:\Program Files\LegacyAVR`, adds **LegacyAVR** to the Start menu
    and, if you tick it, the desktop.
@@ -123,26 +151,28 @@ information).
 
 ## 4. Route the audio (one-time Windows setup)
 
-Open the classic Sound control panel (`Win + R` -> `mmsys.cpl`, or the button in LegacyAVR's **Setup guide**
+Open the classic Sound control panel (`Win + R` -> `mmsys.cpl`, or the button in LegacyAVR's **Setup Guide**
 tab):
 
-1. **Playback -> CABLE Input -> Configure -> 7.1 Surround**, tick every speaker, finish the wizard.
+1. **Playback -> CABLE Input -> Configure -> 5.1 Surround**, tick every speaker, finish the wizard. (7.1 also
+   works, but LegacyAVR folds 7.1 down to 5.1 - Dolby Digital and DTS carry at most 5.1. DD+ 7.1 encoding is
+   being investigated but is not currently available.)
 2. **CABLE Input -> Properties -> Advanced:** 24- or 32-bit, **48000 Hz**. Untick *Enable audio enhancements*;
    turn Spatial Sound off for this device.
-3. Right-click **CABLE Input -> Set as Default Device**. Games and apps now play 7.1 into the cable.
+3. Right-click **CABLE Input -> Set as Default Device**. Games and apps now play 5.1 into the cable.
 4. **Your HDMI / optical device -> Properties -> Advanced:** tick both *Allow applications to take exclusive
    control* boxes.
 
 ```
- Games / apps  -->  CABLE Input (Windows default, 7.1)  -->  LegacyAVR  -->  HDMI / optical  -->  AVR
+ Games / apps  -->  CABLE Input (Windows default, 5.1)  -->  LegacyAVR  -->  HDMI / optical  -->  AVR
 ```
 
 ## 5. First run in LegacyAVR
 
 1. **Output & Profiles** tab: Input = *CABLE Input*; Output = your HDMI / optical device, then press **Default**.
 2. Format = **Dolby Digital 640 kbps** (works with almost every AVR), Mode = **WASAPI Exclusive**.
-3. No subwoofer? In **Upmixing & Bass**, set *Dedicated subwoofer* to inactive and set the AVR's subwoofer
-   to "None".
+3. No subwoofer? In **Upmixing & Audio Settings**, set *Dedicated subwoofer* to inactive and set the AVR's
+   subwoofer to "None" (the AVR then plays the film's LFE through your speakers).
 4. Your AVR's display should show **Dolby Digital** (or DTS).
 5. Run the **Diagnostics** wizard to check every speaker, then **Save as new profile**.
 

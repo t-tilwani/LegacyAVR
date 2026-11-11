@@ -174,7 +174,11 @@ public enum TelemetryFlags2 : uint
     LfeInhibited = 1 << 7,
     EqEnabled = 1 << 8,          // v5: Custom EQ master switch on (replaces the bass control)
     LfeFold = 1 << 9,            // v1.5.0: source LFE folded into FL/FR when the output has no LFE channel
-    NoLfeOutput = 1 << 10,       // v1.5.0: the running output has no LFE channel (no subwoofer, or PCM 2.0)
+    NoLfeOutput = 1 << 10,       // v1.5.0: the last block left without an LFE channel (v1.6.0: per block)
+    ExpLfeGen = 1 << 11,         // v1.6.0: experimental LFE generation enabled
+    ExpLfeFold = 1 << 12,        // v1.6.0: experimental optional LFE fold enabled
+    LfeFolded = 1 << 13,         // v1.6.0: the source LFE is folded into FL/FR right now
+    ChimePlaying = 1 << 14,      // v1.6.0: the activation chime is playing
 }
 
 /// <summary>Numeric values match avr::EngineState / Codec / OutputMode / UpmixMode / TestSignal.</summary>
@@ -185,7 +189,7 @@ public enum UpmixKind : uint { Passthrough = 0, Upmix31 = 1, Upmix51 = 2, PcmDir
 public enum OutputStatusKind : uint { Match = 0, FallbackShared = 1, BitstreamPassthrough = 2, StereoPcmDirect = 3, StoppedByUser = 4, Error = 5 }
 public enum TestSignalKind : uint { Off = 0, PinkNoise = 1, ChannelId = 2, CenterBleed = 3, LfeSweep = 4, PhaseCheck = 5 }
 public enum LfeGenKind : uint { Off = 0, Auto = 1, Always = 2 }
-public enum LfeStatusKind : uint { None = 0, Source = 1, Generated = 2, Upmixed = 3, Inhibited = 4, TestSignal = 5, Dropped = 6 }
+public enum LfeStatusKind : uint { None = 0, Source = 1, Generated = 2, Upmixed = 3, Inhibited = 4, TestSignal = 5, Dropped = 6, Folded = 7 }
 public enum GamingKind : uint { Auto = 0, On = 1, Off = 2 }
 public enum ProcessingStateKind : uint
 {

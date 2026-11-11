@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:LegacyAVR.UI.ViewModels"
         xmlns:ctl="clr-namespace:LegacyAVR.UI.Controls"
+        xmlns:svc="clr-namespace:LegacyAVR.UI.Services"
         xmlns:sys="clr-namespace:System;assembly=mscorlib"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
@@ -103,7 +104,7 @@
         </DataTemplate>
 
         <!-- v1.4.0: profiles (replace presets and device profiles). DataContext = MainViewModel.
-             Used in the Output tab and in the Settings guide. -->
+             Used in the Output tab and in the Settings Guide. -->
         <DataTemplate x:Key="ProfilesPanel">
             <StackPanel>
                 <TextBlock Text="PROFILES" Style="{StaticResource Caption}" />
@@ -137,13 +138,13 @@
                 </WrapPanel>
                 <CheckBox Content="Apply the last used profile when LegacyAVR starts" IsChecked="{Binding ApplyLastProfileAtStartup, Mode=TwoWay}"
                           Margin="0,4,0,0" ToolTip="Only settings that differ are sent. If the profile's output is not connected nothing is applied and you are told why." />
-                <TextBlock Text="{Binding ProfileStatus}" Foreground="{StaticResource Accent}" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding ProfileStatus}" Foreground="{StaticResource AccentText}" FontSize="11" Margin="0,8,0,0" TextWrapping="Wrap" />
                 <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
                            Text="A profile stores everything: output device, format, bitrate, mode, margin, stereo handling, upmix sliders, subwoofer, LFE crossover / level / generation, game mode, bass, Night Mode, every speaker trim and mute, the master level and the custom EQ. The five starting profiles store only format and processing, so they work on any output." />
             </StackPanel>
         </DataTemplate>
         <!-- ============================================================
-             Settings guide: live controls shown inside each entry (v1.2.0).
+             Settings Guide: live controls shown inside each entry (v1.2.0).
              Each template switches its DataContext to the MainViewModel, so the
              control is the real setting, not a copy.
              ============================================================ -->
@@ -179,7 +180,7 @@
             <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
                 <StackPanel Orientation="Horizontal">
                     <Border Background="{Binding EffectiveBrush}" CornerRadius="4" Padding="6,1" Margin="0,0,10,0">
-                        <TextBlock Text="{Binding EffectiveStatusText}" FontSize="10" FontWeight="Bold" Foreground="#0F1115" />
+                        <TextBlock Text="{Binding EffectiveStatusText}" FontSize="10" FontWeight="Bold" Foreground="#101012" />
                     </Border>
                     <TextBlock Text="{Binding OutputFormat}" FontWeight="SemiBold" />
                 </StackPanel>
@@ -198,7 +199,7 @@
         <DataTemplate x:Key="HelpCtl.PcmStatus">
             <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
                 <ComboBox ItemsSource="{Binding UpmixOptions}" SelectedItem="{Binding SelectedUpmix, Mode=TwoWay}" />
-                <TextBlock Text="{Binding PcmSwitchText}" Foreground="{StaticResource Accent}" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding PcmSwitchText}" Foreground="{StaticResource AccentText}" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap" />
             </StackPanel>
         </DataTemplate>
         <DataTemplate x:Key="HelpCtl.Centre">
@@ -258,15 +259,16 @@
             </Grid>
         </DataTemplate>
         <DataTemplate x:Key="HelpCtl.LfeGen">
+            <!-- v1.6.0: experimental - the gates live in Engine Settings, the options appear once a gate is on -->
             <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
-                <!-- v1.5.0: one switch, two meanings - LFE generation with a subwoofer, source-LFE fold without one -->
+                <CheckBox Content="Enable experimental LFE generation" IsChecked="{Binding ExpLfeGen, Mode=TwoWay}" />
                 <ComboBox ItemsSource="{Binding LfeGenOptions}" SelectedItem="{Binding SelectedLfeGen, Mode=TwoWay}" IsEnabled="{Binding IsGeneralLfeGenEnabled}"
-                          Visibility="{Binding DedicatedSub, Converter={StaticResource BoolToVis}}" />
-                <ComboBox ItemsSource="{Binding LfeFoldOptions}" SelectedItem="{Binding SelectedLfeFold, Mode=TwoWay}"
-                          Visibility="{Binding IsNoSub, Converter={StaticResource BoolToVis}}" />
-                <TextBlock Text="{Binding LfeOverrideText}" Foreground="{StaticResource Accent}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
-                           Visibility="{Binding DedicatedSub, Converter={StaticResource BoolToVis}}" />
-                <TextBlock Text="{Binding LfeModeNote}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                          Margin="22,4,0,0" Visibility="{Binding ExpLfeGen, Converter={StaticResource BoolToVis}}" />
+                <CheckBox Content="Enable the experimental LFE fold (no subwoofer)" IsChecked="{Binding ExpLfeFold, Mode=TwoWay}" Margin="0,8,0,0" />
+                <ComboBox ItemsSource="{Binding LfeFoldOptions}" SelectedItem="{Binding SelectedLfeFold, Mode=TwoWay}" IsEnabled="{Binding IsNoSub}"
+                          Margin="22,4,0,0" Visibility="{Binding ExpLfeFold, Converter={StaticResource BoolToVis}}" />
+                <TextBlock Text="{Binding LfeOverrideText}" Foreground="{StaticResource AccentText}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding LfeHandlingText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
                 <TextBlock Text="{Binding LfeStatusText, StringFormat='LFE now: {0}'}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
             </StackPanel>
         </DataTemplate>
@@ -281,8 +283,12 @@
         </DataTemplate>
         <DataTemplate x:Key="HelpCtl.GameLfe">
             <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
-                <CheckBox Content="LFE generation while gaming" IsChecked="{Binding GameLfeGen, Mode=TwoWay}" IsEnabled="{Binding DedicatedSub}" />
-                <TextBlock Text="{Binding GameLfeText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                <TextBlock Text="Available once experimental LFE generation is enabled in Engine Settings." Style="{StaticResource Dim}" FontSize="11"
+                           TextWrapping="Wrap" Visibility="{Binding ExpLfeGen, Converter={StaticResource BoolToVisInv}}" />
+                <StackPanel Visibility="{Binding ExpLfeGen, Converter={StaticResource BoolToVis}}">
+                    <CheckBox Content="LFE generation while gaming (experimental)" IsChecked="{Binding GameLfeGen, Mode=TwoWay}" IsEnabled="{Binding DedicatedSub}" />
+                    <TextBlock Text="{Binding GameLfeText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                </StackPanel>
                 <TextBlock Text="{Binding GameStatusText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
             </StackPanel>
         </DataTemplate>
@@ -383,7 +389,7 @@
         </DataTemplate>
         <DataTemplate x:Key="HelpCtl.Processing">
             <TextBlock DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
-                       Text="{Binding ProcessingText}" Foreground="{StaticResource Accent}" FontWeight="SemiBold" />
+                       Text="{Binding ProcessingText}" Foreground="{StaticResource AccentText}" FontWeight="SemiBold" />
         </DataTemplate>
         <DataTemplate x:Key="HelpCtl.FreqRange">
             <TextBlock DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -404,6 +410,14 @@
         <DataTemplate x:Key="HelpCtl.RestartEngine">
             <Button DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}" HorizontalAlignment="Left"
                     Content="Restart engine" Command="{Binding RestartEngineCommand}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.Chime">
+            <CheckBox DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
+                      Content="Play a short chime when audio starts and after an input change" IsChecked="{Binding ActivationChime, Mode=TwoWay}" />
+        </DataTemplate>
+        <DataTemplate x:Key="HelpCtl.VbCable">
+            <Button DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}" HorizontalAlignment="Left"
+                    Content="Open the VB-CABLE download page" Command="{Binding OpenVbCableCommand}" ToolTip="{x:Static vm:MainViewModel.VbCableUrl}" />
         </DataTemplate>
         <DataTemplate x:Key="HelpCtl.Emergency">
             <WrapPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
@@ -448,7 +462,7 @@
                         <TextBlock Grid.Row="1" Text="START WITH" Style="{StaticResource Caption}" Foreground="{StaticResource Good}" Margin="0,2,0,0" />
                         <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding StartingPoint}" TextWrapping="Wrap" />
                         <!-- v1.2.0: the actual control, live -->
-                        <TextBlock Grid.Row="2" Text="SETTING" Style="{StaticResource Caption}" Foreground="{StaticResource Accent}" Margin="0,14,0,0"
+                        <TextBlock Grid.Row="2" Text="SETTING" Style="{StaticResource Caption}" Foreground="{StaticResource AccentText}" Margin="0,14,0,0"
                                    Visibility="{Binding HasControl, Converter={StaticResource BoolToVis}}" />
                         <Border Grid.Row="2" Grid.Column="1" Background="{StaticResource Surface2}" CornerRadius="6" Padding="10,8" Margin="0,10,0,0"
                                 MaxWidth="620" HorizontalAlignment="Left" MinWidth="320"
@@ -489,11 +503,19 @@
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
+            <!-- v1.6.0: the LegacyAVR logo in its own colours (black script, #731012 "AVR") on a light
+                 plate, so neither colour is lost on the dark theme. Vector (BrandLogo), cropped to the
+                 artwork and scaled uniformly: 38 px high (76 px wide) at any DPI. -->
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <Image Source="{Binding Icon, RelativeSource={RelativeSource AncestorType=Window}}" Width="30" Height="30" Margin="0,0,12,0" />
-                <StackPanel>
-                    <TextBlock Text="LegacyAVR" FontSize="20" FontWeight="Bold" />
-                    <TextBlock Text="Dolby Digital Live / DTS Interactive encoder" Style="{StaticResource Dim}" FontSize="11" />
+                <Border Background="#F4EFEF" CornerRadius="8" Padding="10,4" Margin="0,0,14,0" VerticalAlignment="Center"
+                        BorderBrush="{StaticResource Brand}" BorderThickness="0,0,0,2"
+                        ToolTip="LegacyAVR" AutomationProperties.Name="LegacyAVR">
+                    <Image Source="{x:Static svc:BrandLogo.LogoImage}" Height="38" Stretch="Uniform"
+                           RenderOptions.BitmapScalingMode="HighQuality" SnapsToDevicePixels="True" />
+                </Border>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Dolby Digital Live / DTS Interactive encoder" FontWeight="SemiBold" FontSize="13" />
+                    <TextBlock Text="Surround for AV receivers that take Dolby / DTS bitstreams" Style="{StaticResource Dim}" FontSize="11" />
                 </StackPanel>
             </StackPanel>
             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
@@ -595,7 +617,7 @@
                                ToolTip="Lowest and highest frequency in the input, averaged over the last ~7 seconds (bands within 50 dB of the strongest one)" />
                 </StackPanel>
             </Border>
-            <Path Grid.Column="1" Data="M 0 0 L 14 10 L 0 20" Stroke="{StaticResource Accent}" StrokeThickness="2.5"
+            <Path Grid.Column="1" Data="M 0 0 L 14 10 L 0 20" Stroke="{StaticResource AccentText}" StrokeThickness="2.5"
                   HorizontalAlignment="Center" VerticalAlignment="Center" />
             <Border Grid.Column="2" Style="{StaticResource Card}">
                 <StackPanel>
@@ -603,17 +625,17 @@
                         <TextBlock Text="OUTPUT  (what the AVR / TV receives)" Style="{StaticResource Caption}" VerticalAlignment="Center" />
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                             <!-- v1.5.0: Custom EQ indicator -->
-                            <Border Background="{StaticResource Accent}" CornerRadius="4" Padding="6,1" Margin="0,0,6,0"
+                            <Border Background="{StaticResource AccentText}" CornerRadius="4" Padding="6,1" Margin="0,0,6,0"
                                     Visibility="{Binding EqEnabled, Converter={StaticResource BoolToVis}}" ToolTip="{Binding EqStatusText}">
-                                <TextBlock Text="{Binding CustomEqBadgeText}" FontSize="10" FontWeight="Bold" Foreground="#0F1115" />
+                                <TextBlock Text="{Binding CustomEqBadgeText}" FontSize="10" FontWeight="Bold" Foreground="#101012" />
                             </Border>
                             <Border Background="{Binding EffectiveBrush}" CornerRadius="4" Padding="6,1"
                                     ToolTip="Requested format vs. what LegacyAVR actually opened">
-                                <TextBlock Text="{Binding EffectiveStatusText}" FontSize="10" FontWeight="Bold" Foreground="#0F1115" />
+                                <TextBlock Text="{Binding EffectiveStatusText}" FontSize="10" FontWeight="Bold" Foreground="#101012" />
                             </Border>
                         </StackPanel>
                     </Grid>
-                    <TextBlock Text="{Binding OutputFormat}" Style="{StaticResource Headline}" Foreground="{StaticResource Accent}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding OutputFormat}" Style="{StaticResource Headline}" Foreground="{StaticResource AccentText}" TextTrimming="CharacterEllipsis" />
                     <TextBlock Text="{Binding OutputDetail}" Style="{StaticResource Dim}" FontSize="11" Margin="0,2,0,10" TextTrimming="CharacterEllipsis" />
 
                     <!-- v1.2.0 output visualiser: the channels that actually leave the engine -->
@@ -634,7 +656,7 @@
                     <!-- live processing state (from the DSP, not inferred from settings) -->
                     <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
                         <TextBlock Text="PROCESSING  " Style="{StaticResource Caption}" Margin="0" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding ProcessingText}" FontWeight="SemiBold" Foreground="{StaticResource Accent}" VerticalAlignment="Center"
+                        <TextBlock Text="{Binding ProcessingText}" FontWeight="SemiBold" Foreground="{StaticResource AccentText}" VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis" />
                     </StackPanel>
 
@@ -722,7 +744,7 @@
                             <Border Style="{StaticResource Card}" Margin="0,0,0,16">
                                 <StackPanel>
                                     <TextBlock Text="DEVICES" Style="{StaticResource Caption}" />
-                                    <TextBlock Text="Input - the 7.1 virtual cable (render endpoint = loopback capture)" Style="{StaticResource Dim}" Margin="0,4,0,4" />
+                                    <TextBlock Text="Input - the virtual cable, set to 5.1 (render endpoint = loopback capture)" Style="{StaticResource Dim}" Margin="0,4,0,4" />
                                     <ComboBox ItemsSource="{Binding InputDevices}" SelectedItem="{Binding SelectedInputDevice, Mode=TwoWay}" DisplayMemberPath="Display" />
                                     <TextBlock Text="Output - HDMI ARC / S/PDIF device connected to the AVR / TV" Style="{StaticResource Dim}" Margin="0,12,0,4" />
                                     <Grid>
@@ -783,8 +805,8 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- Upmixing & Bass (v1.4.0: was the right half of "Output & Processing"; "Stereo sources" is now "Upmixing") -->
-            <TabItem Header="Upmixing &amp; Bass">
+            <!-- Upmixing & Audio Settings (v1.6.0: was "Upmixing & Bass"; v1.4.0: was the right half of "Output & Processing") -->
+            <TabItem Header="Upmixing &amp; Audio Settings">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <Grid MaxWidth="1500">
                         <Grid.RowDefinitions>
@@ -800,7 +822,7 @@
                         <Border Grid.ColumnSpan="3" Background="{StaticResource Surface}" BorderBrush="{StaticResource Line}" BorderThickness="1"
                                 CornerRadius="8" Padding="14,10" Margin="0,0,0,16">
                             <TextBlock TextWrapping="Wrap"
-                                       Text="Upmixing only ever applies to stereo sources. Real multichannel audio (5.1, 7.1, and 5.0 / 7.0) is never upmixed: it is passed to the encoder as it is (7.1 is folded down to 5.1). LFE generation, Bass and Custom EQ work on every PCM source; a pre-encoded Dolby / DTS bitstream is always passed through untouched." />
+                                       Text="Upmixing only ever applies to stereo sources. Real multichannel audio (5.1, 7.1, and 5.0 / 7.0) is never upmixed: it is passed to the encoder as it is (7.1 is folded down to 5.1 - DD+ 7.1 encoding is being investigated but is not currently available). Experimental LFE generation, Bass and Custom EQ work on every PCM source; a pre-encoded Dolby / DTS bitstream is always passed through untouched." />
                         </Border>
 
                         <StackPanel Grid.Row="1">
@@ -811,7 +833,7 @@
                                     <CheckBox Content="Encode stereo as 2.0 (lets the AVR apply its own upmixer)"
                                               IsChecked="{Binding StereoAs20, Mode=TwoWay}"
                                               Visibility="{Binding IsKeepStereoMode, Converter={StaticResource BoolToVis}}" />
-                                    <TextBlock Text="{Binding PcmSwitchText}" Foreground="{StaticResource Accent}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,4"
+                                    <TextBlock Text="{Binding PcmSwitchText}" Foreground="{StaticResource AccentText}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,4"
                                                Visibility="{Binding HasPcmSwitchText, Converter={StaticResource BoolToVis}}" />
                                     <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
                                                Text="Upmix sliders keep their values in every mode, so switching to Lossless PCM and back restores your upmix exactly. The first five only affect the two Dynamic upmix modes." />
@@ -921,46 +943,53 @@
                                     </Grid>
                                     <TextBlock Text="{Binding EqStatusText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
                                     <CheckBox Content="{Binding SubToggleText}" IsChecked="{Binding DedicatedSub, Mode=TwoWay}" Margin="0,12,0,4"
-                                              ToolTip="Same switch as at the bottom right. Off = no subwoofer: no LFE channel is sent or generated (5.0 / 3.0); the source's own LFE is folded into the front speakers (see the card below)." />
+                                              ToolTip="Same switch as at the bottom right. Off = no subwoofer: no LFE is created (upmixes become 5.0 / 3.0); a source's own LFE is passed through to the AVR, or folded into the fronts when the output has no LFE channel (see the line below)." />
                                     <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                         <TextBlock Text="LFE  " Style="{StaticResource Caption}" Margin="0" VerticalAlignment="Center" />
                                         <TextBlock Text="{Binding LfeStatusText}" Foreground="{Binding LfeStatusBrush}" FontWeight="SemiBold" TextWrapping="Wrap" />
                                     </StackPanel>
+                                    <!-- v1.6.0: what happens to a source LFE with the current settings -->
+                                    <TextBlock Text="{Binding LfeHandlingText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Border>
 
-                            <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <!-- v1.6.0: experimental LFE options. The card only appears once a gate is switched on in
+                                 Engine Settings > Experimental; each part appears with its own gate. -->
+                            <Border Style="{StaticResource Card}" Margin="0,0,0,16" Visibility="{Binding ShowLfeCard, Converter={StaticResource BoolToVis}}">
                                 <StackPanel>
-                                    <!-- v1.5.0: with a subwoofer this switch controls LFE generation; without one it
-                                         controls whether the source's own LFE is folded into the fronts. -->
-                                    <TextBlock Text="{Binding LfeCardCaption}" Style="{StaticResource Caption}" />
-                                    <ComboBox ItemsSource="{Binding LfeGenOptions}" SelectedItem="{Binding SelectedLfeGen, Mode=TwoWay}" Margin="0,4,0,0"
-                                              IsEnabled="{Binding IsGeneralLfeGenEnabled}"
-                                              Visibility="{Binding DedicatedSub, Converter={StaticResource BoolToVis}}" />
-                                    <ComboBox ItemsSource="{Binding LfeFoldOptions}" SelectedItem="{Binding SelectedLfeFold, Mode=TwoWay}" Margin="0,4,0,0"
-                                              Visibility="{Binding IsNoSub, Converter={StaticResource BoolToVis}}" />
-                                    <TextBlock Text="{Binding LfeOverrideText}" Foreground="{StaticResource Accent}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"
-                                               Visibility="{Binding DedicatedSub, Converter={StaticResource BoolToVis}}" />
-                                    <TextBlock Text="{Binding LfeModeNote}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
-                                    <Grid Margin="0,10,0,0" Visibility="{Binding DedicatedSub, Converter={StaticResource BoolToVis}}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="160" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="64" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="Resume after silence" Style="{StaticResource Dim}" VerticalAlignment="Center" />
-                                        <Slider Grid.Column="1" Minimum="{Binding LfeResetMin}" Maximum="{Binding LfeResetMax}" SmallChange="1" LargeChange="10"
-                                                TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding LfeResetSeconds, Mode=TwoWay}"
-                                                VerticalAlignment="Center"
-                                                ToolTip="Once the source plays its own LFE, Auto generation stays off until every input channel has been silent this long (1 - 300 s, 10 s recommended)" />
-                                        <TextBlock Grid.Column="2" Text="{Binding LfeResetText}" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                                        <Button Grid.Column="3" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="lfeReset"
-                                                ToolTip="Reset to 10 s, the recommended value (asks first)" />
-                                    </Grid>
-                                    <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
-                                               Visibility="{Binding DedicatedSub, Converter={StaticResource BoolToVis}}"
-                                               Text="Auto stops for the rest of the film or game once the source uses its own LFE, so a 5.1 mix with a quiet LFE is never given a second one. It starts listening again after the silence time above (all channels below -80 dBFS). 10 s is recommended." />
+                                    <TextBlock Text="EXPERIMENTAL LFE OPTIONS  (enabled in Engine Settings)" Style="{StaticResource Caption}" />
+                                    <StackPanel Visibility="{Binding ExpLfeGen, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="LFE generation (sources without their own LFE)" FontWeight="SemiBold" Margin="0,4,0,0" />
+                                        <ComboBox ItemsSource="{Binding LfeGenOptions}" SelectedItem="{Binding SelectedLfeGen, Mode=TwoWay}" Margin="0,4,0,0"
+                                                  IsEnabled="{Binding IsGeneralLfeGenEnabled}" />
+                                        <TextBlock Text="{Binding LfeOverrideText}" Foreground="{StaticResource AccentText}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding LfeGenNote}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                        <Grid Margin="0,10,0,0" Visibility="{Binding DedicatedSub, Converter={StaticResource BoolToVis}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="160" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="64" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Resume after silence" Style="{StaticResource Dim}" VerticalAlignment="Center" />
+                                            <Slider Grid.Column="1" Minimum="{Binding LfeResetMin}" Maximum="{Binding LfeResetMax}" SmallChange="1" LargeChange="10"
+                                                    TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding LfeResetSeconds, Mode=TwoWay}"
+                                                    VerticalAlignment="Center"
+                                                    ToolTip="Once the source plays its own LFE, Auto generation stays off until every input channel has been silent this long (1 - 300 s, 10 s recommended)" />
+                                            <TextBlock Grid.Column="2" Text="{Binding LfeResetText}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                            <Button Grid.Column="3" Style="{StaticResource ResetButton}" Command="{Binding ResetCommand}" CommandParameter="lfeReset"
+                                                    ToolTip="Reset to 10 s, the recommended value (asks first)" />
+                                        </Grid>
+                                        <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                                                   Visibility="{Binding DedicatedSub, Converter={StaticResource BoolToVis}}"
+                                                   Text="Auto stops for the rest of the film or game once the source uses its own LFE, so a 5.1 mix with a quiet LFE is never given a second one. It starts listening again after the silence time above (all channels below -80 dBFS). 10 s is recommended." />
+                                    </StackPanel>
+                                    <StackPanel Margin="0,12,0,0" Visibility="{Binding ExpLfeFold, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="Source LFE without a subwoofer" FontWeight="SemiBold" />
+                                        <ComboBox ItemsSource="{Binding LfeFoldOptions}" SelectedItem="{Binding SelectedLfeFold, Mode=TwoWay}" Margin="0,4,0,0"
+                                                  IsEnabled="{Binding IsNoSub}" />
+                                        <TextBlock Text="{Binding LfeFoldNote}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
 
@@ -969,9 +998,12 @@
                                     <TextBlock Text="GAME MODE  (no stereo upmix or output switching while gaming)" Style="{StaticResource Caption}" />
                                     <ComboBox ItemsSource="{Binding GamingOptions}" SelectedItem="{Binding SelectedGaming, Mode=TwoWay}" Margin="0,4,0,0" />
                                     <TextBlock Text="{Binding GameStatusText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,4,0,8" TextWrapping="Wrap" />
-                                    <CheckBox Content="LFE generation while gaming (overrides the LFE generation setting during games)"
-                                              IsChecked="{Binding GameLfeGen, Mode=TwoWay}" IsEnabled="{Binding DedicatedSub}" />
-                                    <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap" Text="{Binding GameLfeText}" />
+                                    <!-- v1.6.0: only once experimental LFE generation is enabled in Engine Settings -->
+                                    <StackPanel Visibility="{Binding ExpLfeGen, Converter={StaticResource BoolToVis}}">
+                                        <CheckBox Content="LFE generation while gaming (experimental - overrides the LFE generation setting during games)"
+                                                  IsChecked="{Binding GameLfeGen, Mode=TwoWay}" IsEnabled="{Binding DedicatedSub}" />
+                                        <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap" Text="{Binding GameLfeText}" />
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -1078,32 +1110,9 @@
                 </Grid>
             </TabItem>
 
-            <!-- Settings guide (searchable help with the real controls inline) -->
-            <TabItem Header="Settings guide">
-                <Grid DataContext="{Binding Help}" MaxWidth="1200">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <Grid Margin="0,0,0,12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="12" />
-                            <ColumnDefinition Width="240" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                                 ToolTip="Search every setting, format and diagnostic term, e.g. 'latency', 'underrun', 'centre', 'DD+', 'subwoofer'" />
-                        <ComboBox Grid.Column="2" ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory, Mode=TwoWay}" />
-                        <TextBlock Grid.Column="3" Text="{Binding ResultCountText}" Style="{StaticResource Dim}" VerticalAlignment="Center" Margin="12,0,0,0" />
-                    </Grid>
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding Results}" ItemTemplate="{StaticResource HelpCard}" />
-                    </ScrollViewer>
-                </Grid>
-            </TabItem>
-
-            <!-- v1.4.0: Engine Settings (was the "Application & Engine" card of the Output tab). v1.5.0: second to last, before the Setup guide. -->
+            <!-- v1.4.0: Engine Settings (was the "Application & Engine" card of the Output tab).
+                 v1.6.0 tab order: Mixer, Output & Profiles, Upmixing & Audio Settings, Diagnostics,
+                 Engine Settings, Settings Guide, Setup Guide (UI test TabOrderTests checks it). -->
             <TabItem Header="Engine Settings">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel MaxWidth="900" HorizontalAlignment="Left">
@@ -1124,6 +1133,35 @@
                                 </WrapPanel>
                                 <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
                                            Text="Stop audio pipeline releases the HDMI/optical output but keeps the engine ready. Shut down engine exits the AVREngine process (Start engine brings it back). In service mode only Stop audio pipeline is available; manage the service from Windows Services." />
+                            </StackPanel>
+                        </Border>
+                        <!-- v1.6.0: activation chime -->
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="ACTIVATION CHIME" Style="{StaticResource Caption}" />
+                                <CheckBox Content="Play a short chime when audio starts and after an input change" IsChecked="{Binding ActivationChime, Mode=TwoWay}" />
+                                <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap"
+                                           Text="A soft two-note chime (under a second, quiet) on the front left and right speakers: once when the audio pipeline is running after LegacyAVR starts, and once after you choose a different input and it has been opened. Nothing plays when a selection fails, while Mute All is on or during bit-exact passthrough of pre-encoded audio (it cannot be mixed into a Dolby / DTS stream - the reason is shown at the bottom of the window). It goes only to the output device, never into the capture input." />
+                                <WrapPanel Margin="0,8,0,0">
+                                    <Button Content="Play the chime now" Command="{Binding PlayChimeCommand}" Margin="0,0,8,0"
+                                            ToolTip="Plays the chime once through the current output" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+                        <!-- v1.6.0: experimental features. Off for new installs and after every upgrade;
+                             saved LFE modes are kept but not used while a gate is off. -->
+                        <Border Style="{StaticResource Card}" Margin="0,0,0,16" BorderBrush="{StaticResource Warn}">
+                            <StackPanel>
+                                <TextBlock Text="EXPERIMENTAL" Style="{StaticResource Caption}" Foreground="{StaticResource Warn}" />
+                                <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="0,0,0,10" TextWrapping="Wrap"
+                                           Text="These features change the bass your AVR receives in ways that depend on your speakers, crossover and room, and have not been verified on enough receivers to be on by default. They are off after installing and after every update. Your saved choices are kept and come back when you enable a feature again." />
+                                <CheckBox Content="Experimental LFE generation" IsChecked="{Binding ExpLfeGen, Mode=TwoWay}" />
+                                <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="22,2,0,8" TextWrapping="Wrap"
+                                           Text="Creates a subwoofer (LFE) channel from the main channels' low bass when the source has none (Auto / Always / Off, in Upmixing &amp; Audio Settings), and enables the 'LFE generation while gaming' option in Game Mode. Experimental because derived LFE adds bass on top of the AVR's own bass management and can double up low frequencies or sound boomy. Off: no LFE is ever created - a source's own LFE is always passed on." />
+                                <CheckBox Content="Experimental LFE fold into the front speakers (no subwoofer)" IsChecked="{Binding ExpLfeFold, Mode=TwoWay}" />
+                                <TextBlock Style="{StaticResource Dim}" FontSize="11" Margin="22,2,0,0" TextWrapping="Wrap"
+                                           Text="With 'Dedicated subwoofer' inactive, offers to mix the source's LFE into front left and right instead of passing it on in the LFE channel (Upmixing &amp; Audio Settings). Experimental because most AVRs already redirect LFE to the front speakers when the subwoofer is set to None, so folding here can double the bass. Off: the source's LFE is passed through untouched for the AVR to manage. An output with no LFE channel (stereo PCM) always folds it, so it is never lost." />
+                                <TextBlock Text="{Binding LfeHandlingText}" Foreground="{StaticResource AccentText}" FontSize="11" Margin="0,10,0,0" TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>
                         <!-- v1.5.0: emergency reset -->
@@ -1159,30 +1197,58 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- Setup guide. v1.5.0: always the last tab. -->
-            <TabItem Header="Setup guide">
+            <!-- Settings Guide (searchable help with the real controls inline) -->
+            <TabItem Header="Settings Guide">
+                <Grid DataContext="{Binding Help}" MaxWidth="1200">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="240" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 ToolTip="Search every setting, format and diagnostic term, e.g. 'latency', 'underrun', 'centre', 'DD+', 'subwoofer'" />
+                        <ComboBox Grid.Column="2" ItemsSource="{Binding Categories}" SelectedItem="{Binding SelectedCategory, Mode=TwoWay}" />
+                        <TextBlock Grid.Column="3" Text="{Binding ResultCountText}" Style="{StaticResource Dim}" VerticalAlignment="Center" Margin="12,0,0,0" />
+                    </Grid>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding Results}" ItemTemplate="{StaticResource HelpCard}" />
+                    </ScrollViewer>
+                </Grid>
+            </TabItem>
+
+            <!-- Setup Guide: always the last tab. -->
+            <TabItem Header="Setup Guide">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel MaxWidth="1200">
                         <Border Style="{StaticResource Card}" Margin="0,0,0,16">
                             <StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
-                                    <Button Content="Open Windows Sound settings" Style="{StaticResource AccentButton}"
-                                            Command="{Binding OpenSoundSettingsCommand}" Margin="0,0,8,0" />
-                                    <Button Content="Open classic Sound control panel" Command="{Binding OpenClassicSoundCommand}"
-                                            ToolTip="Playback devices, Configure (7.1), Properties and Advanced (exclusive mode, 48 kHz) are here" />
-                                </StackPanel>
+                                <WrapPanel Margin="0,0,0,14">
+                                    <!-- v1.6.0: VB-CABLE download page (opens in the default browser; failures are shown in the status line) -->
+                                    <Button Content="Download VB-CABLE (vb-audio.com)" Style="{StaticResource AccentButton}"
+                                            Command="{Binding OpenVbCableCommand}" Margin="0,0,8,6"
+                                            ToolTip="{x:Static vm:MainViewModel.VbCableUrl}" />
+                                    <Button Content="Open Windows Sound settings" Command="{Binding OpenSoundSettingsCommand}" Margin="0,0,8,6" />
+                                    <Button Content="Open classic Sound control panel" Command="{Binding OpenClassicSoundCommand}" Margin="0,0,8,6"
+                                            ToolTip="Playback devices, Configure (5.1 Surround), Properties and Advanced (exclusive mode, 48 kHz) are here" />
+                                </WrapPanel>
                                 <TextBlock Text="ONE-TIME SETUP" Style="{StaticResource Caption}" />
-                                <TextBlock TextWrapping="Wrap" LineHeight="22" xml:space="preserve">1. Install VB-Audio VB-CABLE (or Hi-Fi Cable). Reboot if asked.
-2. Classic Sound control panel → Playback → "CABLE Input" → Configure → choose 7.1 Surround → Next through the wizard, ticking every speaker.
+                                <TextBlock TextWrapping="Wrap" LineHeight="22" xml:space="preserve">1. Install VB-Audio VB-CABLE (free; "Download VB-CABLE" above opens its page) or Hi-Fi Cable. Reboot if asked.
+2. Classic Sound control panel → Playback → "CABLE Input" → Configure → choose 5.1 Surround → Next through the wizard, ticking every speaker.
 3. CABLE Input → Properties → Advanced: 24-bit or 32-bit, 48000 Hz. Untick "Enable audio enhancements" and disable Spatial sound (Windows Sonic / Dolby Atmos for Headphones) on it.
-4. Set "CABLE Input" as the Default Device (games and apps now output 7.1 into the cable).
+4. Set "CABLE Input" as the Default Device (games and apps now output 5.1 into the cable).
 5. Your HDMI / S/PDIF device → Properties → Advanced: tick both "Allow applications to take exclusive control" boxes. Check Supported Formats lists Dolby Digital (and DTS).
 6. In this app (Output &amp; Profiles): Input = CABLE Input, Output = your HDMI / S/PDIF device (press Default so it is chosen every time), then apply a profile (Dolby Digital 5.1 - 640 kbps is the safest start) and save your own with "Save as new profile".
 7. No subwoofer? Click "Dedicated subwoofer active" at the bottom right so it reads "inactive", and set the AVR's subwoofer to None.
 8. The AVR front panel should now show Dolby Digital (or DTS). Run the Diagnostics wizard to verify every speaker.</TextBlock>
                                 <TextBlock Text="GOOD TO KNOW" Style="{StaticResource Caption}" Margin="0,16,0,4" />
                                 <TextBlock Style="{StaticResource Dim}" LineHeight="20" TextWrapping="Wrap"
-                                           Text="• Exclusive mode only locks the HDMI/optical device. Discord, Spotify and system sounds keep working because they play into the cable, which LegacyAVR mixes and encodes.&#x0a;• Optical/coax S/PDIF can carry Dolby Digital and DTS but NOT Dolby Digital Plus; DD+ needs an HDMI ARC sink that explicitly supports it.&#x0a;• For pre-encoded passthrough (e.g. a player bitstreaming AC-3 into the cable), the cable must be at 48 kHz with Windows volume at 100% and no enhancements, so the bits arrive untouched.&#x0a;• Latency before the AVR is typically 70-85 ms with the automatic safety margin; about half of it is the 32 ms Dolby/DTS frame and Windows' own audio engine. Hover the Latency readout for the stages.&#x0a;• Every setting is explained, with its control, in the Settings guide tab." />
+                                           Text="• Why 5.1 and not 7.1: Dolby Digital and DTS carry at most 5.1, so LegacyAVR outputs 5.1. A 7.1 cable still works - the side and rear surrounds are folded down into 5.1 (or 5.0 without a subwoofer) - but 5.1 gives games and apps the layout that actually reaches your AVR. DD+ 7.1 encoding is being investigated but is not currently available.&#x0a;• Exclusive mode only locks the HDMI/optical device. Discord, Spotify and system sounds keep working because they play into the cable, which LegacyAVR mixes and encodes.&#x0a;• Optical/coax S/PDIF can carry Dolby Digital and DTS but NOT Dolby Digital Plus; DD+ needs an HDMI ARC sink that explicitly supports it.&#x0a;• For pre-encoded passthrough (e.g. a player bitstreaming AC-3 into the cable), the cable must be at 48 kHz with Windows volume at 100% and no enhancements, so the bits arrive untouched.&#x0a;• Latency before the AVR is typically 70-85 ms with the automatic safety margin; about half of it is the 32 ms Dolby/DTS frame and Windows' own audio engine. Hover the Latency readout for the stages.&#x0a;• Every setting is explained, with its control, in the Settings Guide tab." />
                             </StackPanel>
                         </Border>
 
@@ -1194,7 +1260,7 @@
                                            Text="Netflix, Disney+, Prime Video and Crunchyroll often play only stereo (PCM 2.0) on Windows when you watch in a web browser or some of their apps, because of copy protection (DRM) and browser limits. What you get depends on the service, the browser or app, your hardware and your plan. If the INPUT meters show only FL and FR while a film plays, the service is sending stereo, and LegacyAVR has no surround channels to pass on." />
                                 <TextBlock Text="QUICK FIXES" Style="{StaticResource Caption}" Margin="0,12,0,4" />
                                 <TextBlock TextWrapping="Wrap" LineHeight="20"
-                                           Text="• Use the Dynamic 5.1 upmix for stereo sources (Upmixing &amp; Bass tab → Upmixing). An upmixer creates derived channels from the stereo mix: the centre from what left and right have in common, the surrounds from what differs. It sounds fuller, but it cannot recover the separate surround tracks that the service did not send." />
+                                           Text="• Use the Dynamic 5.1 upmix for stereo sources (Upmixing &amp; Audio Settings tab → Upmixing). An upmixer creates derived channels from the stereo mix: the centre from what left and right have in common, the surrounds from what differs. It sounds fuller, but it cannot recover the separate surround tracks that the service did not send." />
                                 <TextBlock TextWrapping="Wrap" LineHeight="20" Margin="0,6,0,0"
                                            Text="• Optional, third-party: the '5.1 Surround for Netflix' add-on for Microsoft Edge is designed to request Netflix's 5.1 audio when you watch Netflix in Microsoft Edge. It applies only to Netflix in Edge (not to Disney+, Prime Video, other browsers or the apps). It is made by an independent developer - not by LegacyAVR, Netflix or Microsoft - and LegacyAVR does not endorse it or need it. Check its permissions and reviews before installing, and expect it to stop working if Netflix changes its player." />
                                 <TextBlock TextWrapping="Wrap" LineHeight="20" Margin="0,6,0,0" Style="{StaticResource Dim}"
@@ -1243,7 +1309,7 @@
                 <!-- v1.2.0: subwoofer present or not (default on) -->
                 <Border Grid.Column="3" Background="{StaticResource Surface}" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12"
                         Padding="10,2" VerticalAlignment="Center"
-                        ToolTip="Active: you have a subwoofer (5.1 / 3.1 with LFE). Inactive: no subwoofer - LegacyAVR sends 5.0 / 3.0, generates no LFE and folds the source's own LFE into the front speakers. The brackets show the channels being output right now. Changing it re-opens the output.">
+                        ToolTip="Active: you have a subwoofer (5.1 / 3.1 with LFE). Inactive: no subwoofer - LegacyAVR creates no LFE (upmixes become 5.0 / 3.0); a source's own LFE is passed through for the AVR's bass management (folded into the fronts only on outputs without an LFE channel, or with the experimental fold). The brackets show the channels being output right now. Changing it re-opens the output.">
                     <CheckBox Content="{Binding SubToggleText}" IsChecked="{Binding DedicatedSub, Mode=TwoWay}" Margin="0,2" />
                 </Border>
             </Grid>

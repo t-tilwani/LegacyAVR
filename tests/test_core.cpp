@@ -327,6 +327,9 @@ TEST(Ipc, V12Commands) {
     CHECK(parseRequest("SET_GAMING AUTO").cmd == Cmd::SetGaming);
     CHECK(parseRequest("SET_GAME_LFE 1").cmd == Cmd::SetGameLfe);
     CHECK(parseRequest("set_lfe_fold 0").cmd == Cmd::SetLfeFold);    // v1.5.0
+    CHECK(parseRequest("SET_EXP_LFE_GEN 1").cmd == Cmd::SetExpLfeGen);  // v1.6.0
+    CHECK(parseRequest("set_exp_lfe_fold 0").cmd == Cmd::SetExpLfeFold);
+    CHECK(parseRequest("PLAY_CHIME").cmd == Cmd::PlayChime);
     CHECK(parseRequest("set_lfe_reset 30").cmd == Cmd::SetLfeReset);
     const auto g = parseRequest("GAME_DETECTED 1 \"Some Game.exe\"");
     CHECK(g.cmd == Cmd::GameDetected);
@@ -492,7 +495,10 @@ TEST(Policy, PlanOutput) {
     r.passthroughIec = IecType::None;
     r.dedicatedSub = false;
     r.stereoPcmActive = false;
-    CHECK_EQ(planOutput(r).encoderChannels, uint16_t(5));
+    CHECK_EQ(planOutput(r).encoderChannels, uint16_t(6));   // v1.6.0: a source LFE is passed through
+    r.inputHasLfe = false;
+    CHECK_EQ(planOutput(r).encoderChannels, uint16_t(5));   // ...5.0 only when the input has no LFE
+    r.inputHasLfe = true;
     r.codec = Codec::PCM;                    // PCM format: lossless stereo is meaningless
     r.stereoPcmActive = true;
     CHECK(!planOutput(r).stereoPcm);
@@ -529,6 +535,8 @@ TEST(Config, LfeSettingsPersist) {
     CHECK(def.gameLfeGen);                                   // v1.5.0 new-install defaults
     CHECK(def.gaming == GamingMode::Off);
     CHECK(def.lfeFold);
+    CHECK(!def.expLfeGen);                                   // v1.6.0: experimental gates off
+    CHECK(!def.expLfeFold);
     CHECK_NEAR(def.lfeResetSeconds, 10.0, 1e-6);
     EngineConfig a;
     a.gameLfeGen = true;
@@ -553,6 +561,13 @@ TEST(Config, LfeSettingsPersist) {
     CHECK(avr::win::loadConfig(file, b2));
     CHECK(!b2.lfeFold);
     a.lfeFold = true;
+    a.expLfeGen = true;
+    a.expLfeFold = true;
+    CHECK(avr::win::saveConfig(file, a));
+    EngineConfig b3;
+    CHECK(avr::win::loadConfig(file, b3));
+    CHECK(b3.expLfeGen && b3.expLfeFold);
+    a.expLfeGen = a.expLfeFold = false;
     // v1.4.0: 1..300 whole seconds. 3 s is now valid; out-of-range values are corrected on load.
     for (const auto& [saved, loaded] : {std::pair{3.0f, 3.0f}, std::pair{1.0f, 1.0f}, std::pair{300.0f, 300.0f},
                                          std::pair{0.0f, 1.0f}, std::pair{600.0f, 300.0f}, std::pair{12.4f, 12.0f}}) {
@@ -595,46 +610,105 @@ TEST(Config, OlderFilesKeepTheirDefaults) {
 }
 
 // v1.5.0: the dashboard text never claims a layout that is not really sent.
+// OutputShape{bitstream, channels, lfeOut, lfeFolded, noSub, genEnabled, foldOptional}
 TEST(StatusText, LayoutsAreHonest) {
-    const OutputShape sub51{true, 6, true, true, false};
-    const OutputShape noSub50{true, 5, false, true, true};
-    const OutputShape noSub30{true, 3, false, true, true};
-    const OutputShape dtsNoSub{true, 5, false, true, true};
+    const OutputShape sub51{true, 6, true, false, false, false};
+    const OutputShape noSubPass{true, 6, true, false, true, false};    // v1.6.0: no sub, LFE passed through
+    const OutputShape noSubFold{true, 5, false, true, true, false, true};  // experimental fold (5.0 encoder)
+    const OutputShape noSub50{true, 5, false, false, true, false};     // stereo 5.0 upmix: no LFE to fold
+    const OutputShape noSub30{true, 3, false, false, true, false};
+    const OutputShape dtsNoSub{true, 6, true, false, true, false};     // DTS: 3.x upmix in the 5.1 frame
     const auto has = [](const std::string& s, const char* part) { return s.find(part) != std::string::npos; };
     // Stereo -> 3.x
     CHECK(has(processingText(ProcessingState::StereoUpmix31, kMaskStereo, sub51, false), "3.1 upmix"));
     CHECK(has(processingText(ProcessingState::StereoUpmix31, kMaskStereo, sub51, false), "in a 5.1 stream"));
     const auto t30 = processingText(ProcessingState::StereoUpmix31, kMaskStereo, noSub30, false);
     CHECK(has(t30, "3.0 upmix") && !has(t30, "3.1") && !has(t30, "stream"));
-    CHECK(has(processingText(ProcessingState::StereoUpmix31, kMaskStereo, dtsNoSub, false), "3.0 upmix (in a 5.0 stream"));
+    CHECK(has(processingText(ProcessingState::StereoUpmix31, kMaskStereo, dtsNoSub, false), "3.0 upmix (in a 5.1 stream"));
     CHECK(has(processingText(ProcessingState::StereoUpmix51, kMaskStereo, noSub50, false), "5.0 upmix"));
-    // Discrete 5.1 without a subwoofer: 5.0 out, LFE folded / discarded
-    const auto d51 = processingText(ProcessingState::Discrete, kMask51Side, noSub50, false);
-    CHECK(has(d51, "5.1") && has(d51, "5.0") && has(d51, "front L/R"));
-    OutputShape drop = noSub50;
-    drop.lfeFold = false;
-    CHECK(has(processingText(ProcessingState::Discrete, kMask51Side, drop, false), "discarded"));
+    // Discrete 5.1 without a subwoofer: stays 5.1, LFE passed through (v1.6.0)
+    const auto pass = processingText(ProcessingState::Discrete, kMask51Side, noSubPass, false);
+    CHECK(has(pass, "discrete 5.1") && has(pass, "passed through") && !has(pass, "front L/R"));
+    // ...and with the experimental fold: 5.1 -> 5.0, LFE -> front L/R
+    const auto fold = processingText(ProcessingState::Discrete, kMask51Side, noSubFold, false);
+    CHECK(has(fold, "5.1") && has(fold, "5.0") && has(fold, "front L/R") && has(fold, "experimental fold"));
+    OutputShape optFold = noSubPass;
+    optFold.lfeFolded = true;                                           // fold in a 5.1 frame (PCM 5.1)
+    optFold.foldOptional = true;
+    CHECK(has(processingText(ProcessingState::Discrete, kMask51Side, optFold, false), "experimental fold"));
     // 5.0 source without a subwoofer: nothing to fold, nothing generated
     const uint32_t m50 = kMask51Side & ~SPK_LFE;
-    CHECK(processingText(ProcessingState::Discrete, m50, noSub50, false) == "No upmix (discrete 5.0)");
+    CHECK(processingText(ProcessingState::Discrete, m50, noSubPass, false) == "No upmix (discrete 5.0)");
     // 7.1 is folded to 5.x - never claimed as 7.x
-    const auto f71 = processingText(ProcessingState::FoldDown71, kMask71, noSub50, false);
+    CHECK(has(processingText(ProcessingState::FoldDown71, kMask71, noSubPass, false), "5.1 fold-down"));
+    const auto f71 = processingText(ProcessingState::FoldDown71, kMask71, noSubFold, false);
     CHECK(has(f71, "5.0 fold-down") && has(f71, "front L/R"));
     CHECK(has(processingText(ProcessingState::FoldDown71, kMask71, sub51, false), "5.1 fold-down"));
-    // PCM 2.0 says it is a downmix
-    const OutputShape pcm20{false, 2, false, true, false};
-    CHECK(has(processingText(ProcessingState::Discrete, kMask51Side, pcm20, false), "downmixed to PCM 2.0"));
+    CHECK(has(processingText(ProcessingState::LfeGen, m50, sub51, false), "experimental"));
+    // PCM 2.0: a downmix, and the LFE fold is required (no "experimental")
+    const OutputShape pcm20{false, 2, false, true, false, false};
+    const auto p20 = processingText(ProcessingState::Discrete, kMask51Side, pcm20, false);
+    CHECK(has(p20, "downmixed to PCM 2.0") && has(p20, "front L/R") && !has(p20, "experimental"));
     // Layout names
     CHECK(encodedLayoutName(3, false) == "3.0");
-    CHECK(encodedLayoutName(4, true) == "3.1");
+    CHECK(encodedLayoutName(4, false) == "3.1");
     CHECK(encodedLayoutName(5, false) == "5.0");
-    CHECK(has(encodedLayoutName(6, false), "LFE silent"));
-    CHECK(has(pcmLayoutName(8, true), "back pair silent"));
+    CHECK(encodedLayoutName(6, false) == "5.1");
+    CHECK(has(encodedLayoutName(6, true), "LFE silent"));
+    CHECK(pcmLayoutName(6, false) == "5.1");
+    CHECK(has(pcmLayoutName(8, false), "back pair silent"));
     // LFE status wording
-    CHECK(has(lfeStatusText(LfeStatus::Source, noSub50, false, 0, 10, false), "folded into front L/R"));
-    CHECK(has(lfeStatusText(LfeStatus::Dropped, drop, false, 0, 10, false), "discarded"));
-    CHECK(!has(lfeStatusText(LfeStatus::None, noSub50, false, 0, 10, false), "Generat"));
+    CHECK(has(lfeStatusText(LfeStatus::Source, noSubPass, false, 0, 10, false), "passed through"));
+    // v1.6.0: the experimental fold says so even when it sends 5.0 (no LFE channel because of the
+    // fold); only a format without an LFE channel (PCM 2.0) is reported as the reason.
+    CHECK(has(lfeStatusText(LfeStatus::Folded, noSubFold, false, 0, 10, false), "experimental fold"));
+    CHECK(!has(lfeStatusText(LfeStatus::Folded, noSubFold, false, 0, 10, false), "no LFE channel"));
+    CHECK(has(lfeStatusText(LfeStatus::Folded, optFold, false, 0, 10, false), "experimental fold"));
+    CHECK(has(lfeStatusText(LfeStatus::Folded, pcm20, false, 0, 10, false), "no LFE channel"));
+    CHECK(!has(lfeStatusText(LfeStatus::Folded, pcm20, false, 0, 10, false), "experimental"));
+    CHECK(has(lfeStatusText(LfeStatus::None, sub51, false, 0, 10, false), "experimental and off"));
+    CHECK(!has(lfeStatusText(LfeStatus::None, noSubPass, false, 0, 10, false), "Generat"));
+    CHECK(has(lfeStatusText(LfeStatus::Generated, sub51, false, 0, 10, false), "experimental"));
     CHECK(lfeStatusText(LfeStatus::Source, sub51, false, 0, 10, false) == "From the source");
+}
+
+// v1.6.0: an upgraded 1.5 configuration keeps its saved generation / fold values, but both
+// experimental gates are off, so they are not honoured until the user enables a gate.
+TEST(Config, UpgradeLeavesExperimentalGatesOff) {
+    namespace fs = std::filesystem;
+    using avr::win::EngineConfig;
+    const auto file = fs::temp_directory_path() / "legacyavr-test-upgrade.cfg";
+    {
+        std::ofstream out(file, std::ios::trunc);
+        out << "dedicated_sub=0\nlfe_gen=ALWAYS\ngaming=AUTO\ngame_lfe_gen=1\nlfe_fold=1\n";   // a 1.5.x file
+    }
+    EngineConfig c;
+    CHECK(avr::win::loadConfig(file, c));
+    CHECK(!c.expLfeGen && !c.expLfeFold);                    // gates off after the upgrade
+    CHECK(c.lfeGen == LfeGenMode::Always);                   // saved values kept...
+    CHECK(c.gameLfeGen && c.lfeFold);
+    CHECK(avr::win::saveConfig(file, c));                    // ...and written back unchanged
+    EngineConfig d;
+    CHECK(avr::win::loadConfig(file, d));
+    CHECK(d.lfeGen == LfeGenMode::Always && d.gameLfeGen && d.lfeFold && !d.expLfeGen && !d.expLfeFold);
+    // Enabled in this version: kept across restarts of the same version...
+    d.expLfeGen = d.expLfeFold = true;
+    CHECK(avr::win::saveConfig(file, d));
+    EngineConfig e;
+    CHECK(avr::win::loadConfig(file, e));
+    CHECK(e.expLfeGen && e.expLfeFold);
+    // ...but a later upgrade (a file stamped by another version) starts with both gates off again,
+    // and the saved LFE settings are still untouched.
+    {
+        std::ofstream out(file, std::ios::trunc);
+        out << "lfe_gen=ALWAYS\ngame_lfe_gen=1\nlfe_fold=1\nexp_gates_version=1.5.9\nexp_lfe_gen=1\nexp_lfe_fold=1\n";
+    }
+    EngineConfig g;
+    CHECK(avr::win::loadConfig(file, g));
+    CHECK(!g.expLfeGen && !g.expLfeFold);
+    CHECK(g.lfeGen == LfeGenMode::Always && g.gameLfeGen && g.lfeFold);
+    std::error_code ec;
+    fs::remove(file, ec);
 }
 
 TEST(Config, EqSettingsPersist) {

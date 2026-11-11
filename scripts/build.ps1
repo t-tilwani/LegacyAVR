@@ -270,7 +270,7 @@ Needs:      .NET 10 Desktop Runtime (x64)          https://dotnet.microsoft.com/
 Settings:   %APPDATA%\LegacyAVR and %LOCALAPPDATA%\LegacyAVR (log: %LOCALAPPDATA%\LegacyAVR\AVREngine.log)
 Service:    optional - elevated PowerShell: .\scripts\install-service.ps1   (remove: -Uninstall)
 Licences:   licenses\ (LegacyAVR: MIT; FFmpeg: LGPL v2.1+, see FFmpeg-SOURCE.txt)
-Help:       the Setup guide and Settings guide tabs in the dashboard, and
+Help:       the Setup Guide and Settings Guide tabs in the dashboard, and
             https://github.com/T-Tilwani/LegacyAVR
 "@
 Set-Content -Path (Join-Path $stage 'README.txt') -Value $readme -Encoding UTF8

@@ -29,6 +29,7 @@
 #include "BassManager.h"
 #include "ChannelEq.h"
 #include "ChannelMatrix.h"
+#include "Chime.h"
 #include "DriftController.h"
 #include "Dynamics.h"
 #include "Encoder.h"
@@ -64,18 +65,25 @@ struct CoreConfig {
     uint32_t renderPeriodFrames = 480;   // renderer period expressed in 48 kHz bus frames
     uint32_t bufferMs = 0;               // extra safety margin; 0 = automatic (lowest safe)
     bool stereoPcmOverride = false;      // opened as PCM 2.0 because UpmixMode::PcmDirect saw stereo
-    bool dedicatedSub = true;            // false: no LFE channel - never generated, source LFE folded
-                                         // into FL/FR (or discarded), bitstream encoded as 5.0 / 3.0
+    bool dedicatedSub = true;            // false: no LFE is generated and the upmix creates none
+                                         // (3.0 / 5.0); a source LFE is still passed through when the
+                                         // output can carry it (v1.6.0) - the AVR manages the bass
 
     [[nodiscard]] bool bitstream() const noexcept {
         return outputMode == OutputMode::Exclusive && codec != Codec::PCM;
     }
     [[nodiscard]] Codec effectiveCodec() const noexcept { return bitstream() ? codec : Codec::PCM; }
-    // v1.5.0: does the output carry an LFE channel? Not without a dedicated subwoofer, and
-    // never on PCM 2.0. Without one LFE is never generated and the source LFE is folded.
-    [[nodiscard]] bool lfeOutput() const noexcept {
-        return dedicatedSub && (bitstream() || pcmChannels >= 6);
+    // v1.6.0: can the output format carry an LFE channel at all? (bitstream 5.1 / 3.1, PCM 5.1 / 7.1)
+    [[nodiscard]] bool formatHasLfe() const noexcept { return bitstream() || pcmChannels >= 6; }
+    // The upmixer / LFE generation may create an LFE: only with a dedicated subwoofer.
+    [[nodiscard]] bool createsLfe() const noexcept { return dedicatedSub && formatHasLfe(); }
+    // The capture format has an LFE channel (an unknown mask with 6+ channels counts as yes).
+    [[nodiscard]] bool inputHasLfe() const noexcept {
+        return (inMask & SPK_LFE) != 0 || (inMask == 0 && inChannels >= 6);
     }
+    // Main (multichannel) encoder: 5.1, so a source LFE is passed through even without a
+    // subwoofer; 5.0 only when there is no subwoofer AND the input format has no LFE channel.
+    [[nodiscard]] int mainEncoderChannels() const noexcept { return (dedicatedSub || inputHasLfe()) ? 6 : 5; }
 };
 
 // Output-queue sizing (frames at 48 kHz). Public so the host, the UI text and the tests
@@ -127,6 +135,10 @@ struct CoreStats {
     std::atomic<bool> lfeGameOverride{false};  // Game Mode's LFE toggle is overriding the general setting
     std::atomic<float> eqHeadroomDb{0.0f};     // v1.4.0: level taken off so EQ boosts cannot clip (<= 0)
     std::atomic<uint32_t> eqActiveMask{0};     // v1.4.0: bus channels the EQ is filtering
+    std::atomic<bool> lfeChannelOut{true};     // v1.6.0: the last block left with an LFE channel
+    std::atomic<bool> lfeFolded{false};        // v1.6.0: the last block folded the LFE into FL/FR
+    std::atomic<bool> lfeFoldOptional{false};  // v1.6.0: ...because of the experimental fold (not a format limit)
+    std::atomic<bool> chimeActive{false};      // v1.6.0: the activation chime is playing
     std::atomic<uint32_t> emitChannels{0};     // channels actually leaving (0 = bit-exact passthrough)
     std::atomic<uint32_t> emitMask{0};         // their speaker mask (labels)
     std::atomic<float> postPushFill{0.0f};     // smoothed post-push output fill (frames)
@@ -160,6 +172,8 @@ public:
     [[nodiscard]] int encoderDelaySamples() const noexcept { return encMain_.delaySamples(); }
     [[nodiscard]] int encoderMainChannels() const noexcept { return encMain_.channels(); }
     [[nodiscard]] int encoderThreeChannels() const noexcept { return enc3_.isOpen() ? enc3_.channels() : 0; }
+    [[nodiscard]] bool encoderFiveOpen() const noexcept { return enc5_.isOpen(); }
+    [[nodiscard]] const ActivationChime& chime() const noexcept { return chime_; }
     [[nodiscard]] double resamplerDelayMs() const noexcept { return resampler_.delayMs(); }
     [[nodiscard]] double driftTargetFrames() const noexcept { return drift_.target(); }
     [[nodiscard]] const QueueSizing& sizing() const noexcept { return sizing_; }
@@ -199,9 +213,13 @@ private:
     SafetyLimiter limiter_;
     Resampler resampler_;
     DriftController drift_;
-    // encMain_: 5.1 (5.0 without a subwoofer); enc2_: stereo kept as 2.0; enc3_ (v1.5.0,
-    // AC-3 / E-AC-3 only): 3.1 (3.0 without a subwoofer) for the stereo -> 3.x upmix.
-    AudioEncoder encMain_, enc2_, enc3_;
+    // encMain_: multichannel, 5.1 (5.0 only without a subwoofer and without an input LFE);
+    // enc2_: stereo kept as 2.0; enc3_ (v1.5.0, AC-3 / E-AC-3 only): 3.1 (3.0 without a
+    // subwoofer) for the stereo -> 3.x upmix; enc5_ (v1.6.0, no subwoofer only): 5.0 for the
+    // stereo -> 5.0 upmix and for the experimental LFE fold.
+    AudioEncoder encMain_, enc2_, enc3_, enc5_;
+    ActivationChime chime_;
+    uint32_t chimeSeen_ = 0;
     Iec61937Detector detector_;
     TestSignalGenerator tests_;
     IecType encIec_ = IecType::None;

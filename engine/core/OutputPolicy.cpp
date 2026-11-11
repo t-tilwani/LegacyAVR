@@ -16,7 +16,7 @@ OutputPlan planOutput(const OutputRequest& r) noexcept {
         p.pcmChannels = 2;
     }
     p.iec = (r.mode == OutputMode::Exclusive && p.codec != Codec::PCM) ? iecForCodec(p.codec) : IecType::None;
-    p.encoderChannels = r.dedicatedSub ? 6 : 5;
+    p.encoderChannels = (r.dedicatedSub || r.inputHasLfe) ? 6 : 5;   // same rule as CoreConfig::mainEncoderChannels
     return p;
 }
 

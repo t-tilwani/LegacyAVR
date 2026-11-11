@@ -16,6 +16,16 @@ public partial class EqWindow : Window
         InitializeComponent();
         _vm = new EqDialogViewModel(main, channel);
         DataContext = _vm;
+        foreach (var ch in main.EqChannels) ch.CopyRequested += OnCopyRequested;
+    }
+
+    /// <summary>v1.6.0: "Apply to..." on a band - choose the channels, confirm, copy.</summary>
+    private void OnCopyRequested(object? sender, EqBandViewModel band)
+    {
+        if (sender is not ChannelEqViewModel source) return;
+        var vm = new EqBandCopyViewModel(source, band, _vm.Main.EqChannels, _vm.Main.Confirm);
+        var dlg = new EqCopyWindow(vm) { Owner = this };
+        dlg.ShowDialog();
     }
 
     /// <summary>Shows another channel in the already open dialog.</summary>
@@ -32,6 +42,7 @@ public partial class EqWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        foreach (var ch in _vm.Main.EqChannels) ch.CopyRequested -= OnCopyRequested;
         _vm.Dispose();   // ends auditioning
         base.OnClosed(e);
     }

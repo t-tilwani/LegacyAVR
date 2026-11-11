@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/images/logo.svg" alt="LegacyAVR" width="320">
+</p>
+
 # LegacyAVR
 
 ![Windows 11](https://img.shields.io/badge/Windows-11-0078D4?logo=windows11&logoColor=white)
@@ -75,13 +79,14 @@ sharing it because I thought it might help someone else, too.
 
 **Processing**
 - Stereo upmix (Dynamic 3.1 / 5.1, or 3.0 / 5.0 without a subwoofer). Real multichannel audio is never upmixed.
-- LFE generation for 5.0 / 7.0 sources (with a subwoofer), with a safeguard that stops it once a source uses its
-  own LFE.
-- Setups without a subwoofer: no LFE channel is generated or sent (3.0 / 5.0), and a source's own LFE is folded
-  into the front speakers (low-passed, -3 dB each, limiter-protected) - or discarded, if you prefer.
-  See [Channel layouts](#channel-layouts-and-the-subwoofer-switch).
+- Setups without a subwoofer: no LFE is created (3.0 / 5.0 upmixes), and a source's own LFE is passed through
+  for the AVR's bass management - never discarded. Outputs without an LFE channel (PCM 2.0) fold it into the
+  front speakers. See [Channel layouts](#channel-layouts-and-the-subwoofer-switch).
+- **Experimental** (off by default and after every update, in *Engine Settings > Experimental*): LFE generation
+  for 5.0 / 7.0 sources (with a subwoofer, with a safeguard that stops it once a source uses its own LFE), and
+  folding a source's LFE into the front speakers without a subwoofer.
 - Optional custom five-band parametric EQ per speaker, with click-free changes, automatic headroom against
-  clipping and an "audition" mode.
+  clipping and an "audition" mode. Values can be typed in exactly, and a band can be copied to other channels.
 - Night Mode compression, safety limiter, Game Mode with full-screen game detection.
 
 **Dashboard (WPF)**
@@ -91,7 +96,8 @@ sharing it because I thought it might help someone else, too.
 - Selectable error messages with a one-click "Open log folder", and an emergency reset that force-stops the
   engine and restarts the dashboard.
 - Diagnostics wizard (channel identification, levels, centre bleed, LFE, polarity).
-- Searchable Settings guide with the real controls built in; system-tray operation.
+- A short, quiet activation chime when audio starts and after an input change (can be switched off).
+- Searchable Settings Guide with the real controls built in; system-tray operation.
 
 ---
 
@@ -99,10 +105,10 @@ sharing it because I thought it might help someone else, too.
 
 ```
  Games / apps / players
-          |  7.1 float PCM (Windows default playback device)
+          |  5.1 float PCM (Windows default playback device)
           v
  +---------------------------+
- |  VB-Audio Virtual Cable   |   "CABLE Input", configured as 7.1 / 48 kHz
+ |  VB-Audio Virtual Cable   |   "CABLE Input", configured as 5.1 / 48 kHz
  +---------------------------+
           |  WASAPI loopback capture
           v
@@ -173,7 +179,7 @@ The full design (thread model, real-time memory policy, latency budget, IPC layo
 3. Download and install [VB-CABLE Virtual Audio Device](https://vb-audio.com/Cable/) (Setup's last page has a
    button for it). Restart your PC if VB-CABLE's installer asks you to.
 4. Open the Sound control panel (`Win + R` -> type `mmsys.cpl` -> Enter): configure **CABLE Input** as
-   **7.1 Surround** (or 5.1) and set it as the **default playback device**. The full checklist is in
+   **5.1 Surround** and set it as the **default playback device**. The full checklist is in
    [Windows audio setup](#windows-audio-setup-vb-audio-cable).
 5. Start **LegacyAVR** from the Start menu and select your HDMI ARC or optical (S/PDIF) output device.
 
@@ -190,13 +196,13 @@ settings).
 ## Windows audio setup (VB-Audio Cable)
 
 One-time setup. All of these are in the classic Sound control panel (`mmsys.cpl`); the dashboard's Setup
-guide tab has buttons that open it.
+Guide tab has buttons that open it, and a **Download VB-CABLE** button for the download page.
 
 1. Install **VB-CABLE** from [vb-audio.com/Cable](https://vb-audio.com/Cable/) and reboot if asked.
-2. **Playback -> CABLE Input -> Configure -> 7.1 Surround**, ticking every speaker in the wizard.
+2. **Playback -> CABLE Input -> Configure -> 5.1 Surround**, ticking every speaker in the wizard.
 3. **CABLE Input -> Properties -> Advanced:** 24- or 32-bit, **48000 Hz**. Untick *Enable audio enhancements*
    and turn Spatial Sound off on this device.
-4. Set **CABLE Input as the Default Device**. Games and apps now output 7.1 into the cable.
+4. Set **CABLE Input as the Default Device**. Games and apps now output 5.1 into the cable.
 5. **Your HDMI / S/PDIF device -> Properties -> Advanced:** tick both *Allow applications to take exclusive
    control* boxes. Its *Supported Formats* tab should list Dolby Digital (and DTS).
 6. In LegacyAVR (**Output & Profiles** tab): Input = *CABLE Input*, Output = your HDMI / S/PDIF device (press
@@ -206,6 +212,11 @@ guide tab has buttons that open it.
 
 Discord, Spotify and system sounds keep working: they play into the cable, which LegacyAVR mixes and encodes.
 Exclusive mode only locks the HDMI / optical device.
+
+**Why 5.1 and not 7.1?** Dolby Digital and DTS carry at most 5.1, and LegacyAVR processes audio as 5.1, so a 5.1
+cable gives games and apps the layout that actually reaches your AVR. A cable set to 7.1 still works: 7.1 input
+is folded down to 5.1 (or 5.0 when there is no LFE channel to carry). DD+ 7.1 encoding is being investigated but
+is not currently available.
 
 ---
 
@@ -265,17 +276,29 @@ Run either the service **or** `AVREngine.exe`, not both; a global mutex enforces
 
 - Start **LegacyAVR** from the Start menu (or `LegacyAVR.UI.exe`); it starts the engine automatically. Closing the window sends it to the tray and
   encoding continues; use **Exit** in the tray menu to quit.
+
+The tabs, in order: **Mixer**, **Output & Profiles**, **Upmixing & Audio Settings**, **Diagnostics**,
+**Engine Settings**, **Settings Guide** and **Setup Guide**.
+
+- **Mixer:** per-speaker trims, mutes and the EQ button for each speaker.
 - **Output & Profiles:** devices, format, bitrate, output mode, safety margin, and profiles (save, apply,
   import, export). When the settings differ from the active profile a **Save** button appears in the footer:
   it overwrites the active profile, or asks for a name and creates a new one for the selected output.
-- **Upmixing & Bass:** stereo handling, upmix sliders, bass / subwoofer, custom EQ, the LFE switch, Game Mode,
-  Night Mode.
-- **Mixer:** per-speaker trims, mutes and the EQ button for each speaker.
-- **Diagnostics**, **Settings guide** (every setting explained, with its control), **Engine Settings** (start
-  with Windows, engine controls, logs, emergency reset) and the **Setup guide** (last tab).
+- **Upmixing & Audio Settings:** stereo handling, upmix sliders, bass / subwoofer, custom EQ, Game Mode,
+  Night Mode, and the experimental LFE options once they are enabled.
+- **Diagnostics:** the speaker test wizard and live statistics.
+- **Engine Settings:** start with Windows, engine controls, logs, the activation chime, the **Experimental**
+  switches and the emergency reset.
+- **Settings Guide** (every setting explained, with its control) and **Setup Guide** (last tab).
 
-Defaults for a new installation: Game Mode off, *LFE generation while gaming* on (it only acts while Game Mode is
-active), dedicated subwoofer active. An existing configuration keeps its own settings when you upgrade.
+In the custom EQ dialog the frequency, gain and Q readouts can be typed into (Enter applies; out-of-range values
+are refused and marked rather than clamped), and **Apply to...** copies one band to the other channels after a
+confirmation.
+
+Defaults for a new installation: Game Mode off, dedicated subwoofer active, activation chime on, and both
+experimental features off. An existing configuration keeps its own settings when you upgrade, except that the
+experimental features are switched off again after every update (your saved LFE choices are kept and return when
+you enable them).
 
 Logs: `%LOCALAPPDATA%\LegacyAVR\AVREngine.log` (service: `%ProgramData%\LegacyAVR\`); dashboard errors go to
 `LegacyAVR.UI.log` in the same folder. The red error banner's **Open log folder** button opens it, and its text
@@ -292,24 +315,29 @@ LegacyAVR processes audio on an internal 5.1 bus. What actually leaves depends o
 
 | Format | Layouts it can send | Without a subwoofer |
 |---|---|---|
-| Dolby Digital (AC-3) | 2.0, 3.0, 3.1, 5.0, 5.1 | 3.1 upmix → **3.0**, 5.1 → **5.0** |
-| Dolby Digital Plus (E-AC-3) | 2.0, 3.0, 3.1, 5.0, 5.1 | 3.1 upmix → **3.0**, 5.1 → **5.0** |
-| DTS (FFmpeg encoder) | 2.0, 5.0, 5.1 - no 3.x layout | 5.1 → **5.0**; a 3.0 upmix travels in a 5.0 stream with silent surrounds (the live indicator says so) |
-| PCM | the device's format (2.0, 5.1 or 7.1) | the LFE slot of a 5.1 / 7.1 format stays silent |
+| Dolby Digital (AC-3) | 2.0, 3.0, 3.1, 5.0, 5.1 | 3.1 upmix → **3.0**, 5.1 upmix → **5.0**; a 5.1 source stays **5.1** (LFE passed through) |
+| Dolby Digital Plus (E-AC-3) | 2.0, 3.0, 3.1, 5.0, 5.1 | as Dolby Digital |
+| DTS (FFmpeg encoder) | 2.0, 5.0, 5.1 - no 3.x layout | 5.1 upmix → **5.0**; a 3.0 upmix travels in a 5.x stream with silent surrounds (the live indicator says so); a 5.1 source stays 5.1 |
+| PCM | the device's format (2.0, 5.1 or 7.1) | a source LFE stays in the LFE slot; PCM 2.0 folds it into L/R |
 
-- **"Dedicated subwoofer" inactive:** LegacyAVR never generates an LFE channel. 3.0, 5.0 and 7.0 sources stay
-  without one; the Dynamic upmixes become 3.0 / 5.0. An LFE that the *source* already has (5.1 / 7.1 films and
-  games) is **not thrown away**: the LFE switch folds it into the front left and right speakers (120 Hz low-pass,
-  -3 dB per speaker so its power is kept, safety limiter against clipping). Set the switch to *Off* to discard
-  it instead - the LFE indicator then says "discarded". The LFE trim on the Mixer sets how loud the folded bass is.
-- **"Dedicated subwoofer" active:** the same switch controls LFE generation (Auto / Always / Off) for sources
-  without an LFE.
+- **"Dedicated subwoofer" inactive:** LegacyAVR never creates an LFE: 3.0, 5.0 and 7.0 sources stay without
+  one and the Dynamic upmixes become 3.0 / 5.0. An LFE that the *source* already has (5.1 / 7.1 films and games)
+  is **never thrown away**: by default it is **passed through** in the LFE channel (5.1 stays 5.1), and your AVR,
+  with its subwoofer set to *None*, redirects that bass to the speakers that can play it - exactly as with a
+  Blu-ray player. If the output has no LFE channel (PCM 2.0) it is folded into the front left and right speakers
+  instead (120 Hz low-pass, -3 dB per speaker so its power is kept, safety limiter against clipping).
+- **Experimental LFE fold** (*Engine Settings > Experimental*, off by default): without a subwoofer, LegacyAVR
+  folds the source's LFE into the front speakers itself and sends 5.0. Use it only if your AVR does not redirect
+  LFE when the subwoofer is set to None - otherwise the bass is doubled. The live indicator then shows
+  "LFE → front L/R (experimental fold)", and the LFE trim on the Mixer sets how loud the folded bass is.
+- **Experimental LFE generation** (*Engine Settings > Experimental*, off by default; needs a subwoofer): Auto /
+  Always / Off for sources without an LFE, and *LFE generation while gaming* in the Game Mode card. While the
+  experimental switch is off nothing is generated, but the saved choice is kept.
 - **7.0 / 7.1:** cannot be sent as seven discrete channels. The internal bus and these encoders (AC-3, E-AC-3
-  and DTS in FFmpeg) stop at 5.1, so 7.x sources are folded to 5.x (side and back speakers combined at -3 dB)
-  and shown as "7.1 → 5.0 fold-down" (or 5.1 with a subwoofer). A 7.1 PCM device receives 5.x with a silent
-  back pair, and the dashboard labels it that way.
-- **PCM 2.0** has no LFE channel either: the source's LFE is folded into L/R before the stereo downmix, and
-  nothing is generated.
+  and DTS in FFmpeg) stop at 5.1, so 7.x input is folded down to 5.x (side and back speakers combined at -3 dB)
+  and shown as "7.1 → 5.1 fold-down" (5.0 when there is no LFE channel to carry). A 7.1 PCM device receives 5.x
+  with a silent back pair, and the dashboard labels it that way. This is why the cable should be set to 5.1.
+  DD+ 7.1 encoding is being investigated but is not currently available.
 
 ---
 
@@ -342,9 +370,10 @@ LegacyAVR processes audio on an internal 5.1 bus. What actually leaves depends o
 | LegacyAVR does not start after installing | The .NET 10 Desktop Runtime or Visual C++ Redistributable (x64) is missing: run Setup again and let it install them, or use the links in [Requirements](#requirements). |
 | Pre-encoded audio not passed through | The cable must be 48 kHz, Windows volume 100 %, no enhancements, so the bits arrive untouched. |
 | Engine or dashboard not responding | *Engine Settings > Emergency reset*. Then check the log (**Open log folder** in the red banner or in Engine Settings). |
-| No bass without a subwoofer | Is the LFE switch on *Fold the source's LFE into front L/R*? Only sources with their own LFE have any to fold; without a subwoofer nothing is generated. |
+| No bass without a subwoofer | Set the AVR's subwoofer to *None* so it redirects the passed-through LFE to your speakers. If your AVR does not do that, enable the experimental LFE fold (*Engine Settings > Experimental*). Only sources with their own LFE have any; without a subwoofer nothing is generated. |
+| No activation chime | It is skipped while Mute All is on, during bit-exact passthrough of pre-encoded audio and when an input change fails - the status line says why. It can be switched off in *Engine Settings*. |
 
-The in-app **Settings guide** covers every setting and readout in more detail.
+The in-app **Settings Guide** covers every setting and readout in more detail.
 
 ---
 
@@ -356,7 +385,7 @@ ui/                WPF dashboard (LegacyAVR.UI) and its xUnit tests (LegacyAVR.U
 tests/             native unit / integration tests and benchmarks
 scripts/           build / packaging, vcpkg setup and service scripts (PowerShell) and installer.iss (Inno Setup)
 build/             shared MSBuild properties
-docs/              ARCHITECTURE.md, images/
+docs/              ARCHITECTURE.md, images/ (logo.svg)
 Github Releases/   release documentation (README, LICENSE, notices, release notes); -Package writes the
                    installer, zip and checksums here (git-ignored)
 ```

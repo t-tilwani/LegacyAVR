@@ -47,7 +47,11 @@ enum TelemetryFlags2 : uint32_t {
     TF2_LfeInhibited    = 1u << 7,   // v4: native-LFE latch set (Auto generation paused)
     TF2_EqEnabled       = 1u << 8,   // v5: Custom EQ master switch is on (the bass control is replaced)
     TF2_LfeFold         = 1u << 9,   // v1.5.0: "LFE fold" on - source LFE is folded into FL/FR when the output has no LFE
-    TF2_NoLfeOutput     = 1u << 10,  // v1.5.0: the running output has no LFE channel (no subwoofer, or PCM 2.0)
+    TF2_NoLfeOutput     = 1u << 10,  // v1.5.0: the last block left without an LFE channel (v1.6.0: per block)
+    TF2_ExpLfeGen       = 1u << 11,  // v1.6.0: experimental LFE generation enabled
+    TF2_ExpLfeFold      = 1u << 12,  // v1.6.0: experimental optional LFE fold enabled
+    TF2_LfeFolded       = 1u << 13,  // v1.6.0: the source's LFE is being folded into FL/FR right now
+    TF2_ChimePlaying    = 1u << 14,  // v1.6.0: the activation chime is being played
 };
 
 #pragma pack(push, 1)

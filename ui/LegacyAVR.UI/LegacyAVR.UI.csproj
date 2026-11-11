@@ -18,7 +18,9 @@
     <RootNamespace>LegacyAVR.UI</RootNamespace>
     <AssemblyName>LegacyAVR.UI</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.5.0</Version>
+    <!-- v1.6.0: the LegacyAVR logo icon (Explorer, Start menu, taskbar). Rebuild it with scripts\make-icons.py. -->
+    <ApplicationIcon>Assets\LegacyAVR.ico</ApplicationIcon>
+    <Version>1.6.0</Version>
     <Product>LegacyAVR</Product>
     <Description>LegacyAVR control panel</Description>
     <!-- Same output folder as AVREngine.exe so the UI can launch the engine. -->
@@ -29,6 +31,12 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="LegacyAVR.UI.Tests" />
+  </ItemGroup>
+
+  <!-- v1.6.0: window and tray icons (loaded with pack://application:,,,/Assets/...) -->
+  <ItemGroup>
+    <Resource Include="Assets\LegacyAVR.ico" />
+    <Resource Include="Assets\LegacyAVR-muted.ico" />
   </ItemGroup>
 
 </Project>

@@ -3,6 +3,7 @@
 #include "WinUtil.h"
 
 #include "../core/LiveParams.h"
+#include "../core/Version.h"
 #include "../ipc/ControlProtocol.h"
 
 #include <shlobj.h>
@@ -75,6 +76,14 @@ bool loadConfig(const std::filesystem::path& file, EngineConfig& cfg) {
     if (auto it = kv.find("gaming"); it != kv.end()) if (auto m = ipc::parseGamingMode(it->second)) cfg.gaming = *m;
     b("game_lfe_gen", cfg.gameLfeGen);
     b("lfe_fold", cfg.lfeFold);
+    // v1.6.0: experimental gates are honoured only by the version that saved them, so they are
+    // off for new installs AND after every upgrade (or downgrade). Absent (any file before 1.6.0)
+    // = off. The LFE settings they guard (lfe_gen, lfe_fold, game_lfe_gen) are never changed.
+    cfg.expLfeGen = cfg.expLfeFold = false;
+    if (auto it = kv.find("exp_gates_version"); it != kv.end() && it->second == kVersionString) {
+        b("exp_lfe_gen", cfg.expLfeGen);
+        b("exp_lfe_fold", cfg.expLfeFold);
+    }
     f("lfe_reset_s", cfg.lfeResetSeconds);
     cfg.lfeResetSeconds = clampLfeResetSeconds(cfg.lfeResetSeconds);   // older files may hold up to 600
     b("eq_enabled", cfg.eq.enabled);
@@ -123,6 +132,9 @@ bool saveConfig(const std::filesystem::path& file, const EngineConfig& cfg) {
         out << "gaming=" << ipc::gamingToken(cfg.gaming) << '\n';
         out << "game_lfe_gen=" << (cfg.gameLfeGen ? 1 : 0) << '\n';
         out << "lfe_fold=" << (cfg.lfeFold ? 1 : 0) << '\n';
+        out << "exp_gates_version=" << kVersionString << '\n';
+        out << "exp_lfe_gen=" << (cfg.expLfeGen ? 1 : 0) << '\n';
+        out << "exp_lfe_fold=" << (cfg.expLfeFold ? 1 : 0) << '\n';
         out << "lfe_reset_s=" << cfg.lfeResetSeconds << '\n';
         out << "eq_enabled=" << (cfg.eq.enabled ? 1 : 0) << '\n';
         for (size_t c = 0; c < kBusChannels; ++c) {

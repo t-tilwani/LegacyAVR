@@ -49,9 +49,16 @@ struct LiveParams {
     std::atomic<float> lfeResetSeconds{10.0f};       // 1..300 s, default 10 (v1.4.0: was 10..600)
     std::atomic<bool> lfeInhibited{false};           // written by the DSP thread only
     std::atomic<uint64_t> lastSoundUs{0};            // last input block with any channel above silence
-    // v1.5.0: output without an LFE channel (no dedicated subwoofer, or PCM 2.0): fold the
-    // source's own LFE into the front speakers (true, default - nothing is lost) or discard it.
+    // v1.5.0 setting, v1.6.0 meaning: with the experimental fold gate on and no dedicated
+    // subwoofer, fold the source's LFE into the front speakers (true) or keep it in the LFE
+    // channel (false). An output without an LFE channel always folds (nothing is discarded).
     std::atomic<bool> lfeFold{true};
+    // v1.6.0 experimental gates (both off by default and after an upgrade). While a gate is
+    // off the saved setting it guards (lfeGenMode / gameLfeGen, lfeFold) is kept but ignored.
+    std::atomic<bool> expLfeGen{false};    // LFE generation (5.0 -> 5.1, 2.0 -> 2.1, Game Mode's toggle)
+    std::atomic<bool> expLfeFold{false};   // optional fold of source LFE into FL/FR without a subwoofer
+    // v1.6.0 activation chime: the host bumps chimeRequest; the DSP thread plays one chime per bump.
+    std::atomic<uint32_t> chimeRequest{0};
 
     // v1.4.0: custom per-channel EQ (see ChannelEq.h). The DSP thread re-reads the band
     // values when eqRevision changes; eqEnabled / channel enables are read every block.

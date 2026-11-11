@@ -86,7 +86,7 @@ public partial class App : System.Windows.Application
         _vm.EmergencyRequested += async (_, reopen) => await EmergencyExitAsync(reopen);
 
         _window = new MainWindow { DataContext = _vm };
-        _window.Icon = IconFactory.CreateImageSource(64);
+        _window.Icon = IconFactory.CreateWindowIcon();
 
         _tray = new TrayIconService();
         _tray.SetProfiles(_profiles.Profiles, _settings.Settings.LastProfile);

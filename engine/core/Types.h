@@ -63,8 +63,9 @@ enum class OutputStatus : uint32_t {
 //  Auto   : generate one only for multichannel sources whose own LFE is silent (5.0, 7.0,
 //           3.0 ...), confirmed for the content hold time, with smooth fades
 //  Always : like Auto, and also for stereo sources that are not upmixed (2.0 -> 2.1)
-// v1.5.0: only with a dedicated subwoofer. Without one no LFE is ever generated; the
-// "LFE fold" switch (LiveParams::lfeFold) decides what happens to the source's own LFE.
+// v1.5.0: only with a dedicated subwoofer.
+// v1.6.0: experimental - only honoured while LiveParams::expLfeGen is on (off by default and
+// after every upgrade). The saved mode is kept either way.
 enum class LfeGenMode : uint32_t { Off = 0, Auto = 1, Always = 2 };
 
 // v1.2.0: game handling. The engine only sees "gaming active"; Auto detection (a
@@ -95,7 +96,9 @@ enum class LfeStatus : uint32_t {
     Upmixed = 3,     // created by the stereo upmixer
     Inhibited = 4,   // generation would run, but the source used its own LFE this session
     TestSignal = 5,
-    Dropped = 6,     // v1.5.0: no subwoofer and "LFE fold" off - the source's LFE is discarded
+    Dropped = 6,     // v1.5.0 only (no longer produced: source LFE is never discarded since v1.6.0)
+    Folded = 7,      // v1.6.0: the source's LFE is folded into FL/FR (output has no LFE channel,
+                     //         or the experimental fold is on without a dedicated subwoofer)
 };
 
 enum class StreamKind : uint32_t {

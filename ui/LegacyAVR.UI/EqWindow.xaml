@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:LegacyAVR.UI.ViewModels"
+        xmlns:ctl="clr-namespace:LegacyAVR.UI.Controls"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:EqDialogViewModel}"
         Title="{Binding Title}" Width="820" Height="700" MinWidth="700" MinHeight="560"
@@ -12,48 +13,112 @@
 
     <!-- v1.4.0: custom EQ of one output channel. Opened from the EQ button of a mixer strip. -->
     <Window.Resources>
-        <!-- One band: name | frequency (log slider) | gain | Q (bells only). Every slider has its own reset. -->
+        <!-- v1.6.0: editable value box next to a slider. Enter or leaving the box applies the value;
+             a refused value turns the border red and the row explains why. -->
+        <Style x:Key="ValueBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Padding" Value="4,2" />
+            <Setter Property="HorizontalContentAlignment" Value="Right" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="ctl:TextBoxCommit.Enabled" Value="True" />
+            <Setter Property="ToolTip" Value="Type a value and press Enter (Esc cancels)" />
+        </Style>
+
+        <!-- One band: name | frequency (log slider) | gain | Q (bells only). Every slider has its own reset;
+             v1.6.0: editable values and an "apply to other channels" button per band. -->
         <DataTemplate x:Key="BandRow" DataType="{x:Type vm:EqBandViewModel}">
             <Border Background="{StaticResource Surface2}" CornerRadius="6" Padding="10,6" Margin="0,0,0,6">
                 <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="80" />
                         <ColumnDefinition Width="*" MinWidth="120" />
-                        <ColumnDefinition Width="70" />
+                        <ColumnDefinition Width="78" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="16" />
                         <ColumnDefinition Width="*" MinWidth="100" />
-                        <ColumnDefinition Width="62" />
+                        <ColumnDefinition Width="70" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="16" />
                         <ColumnDefinition Width="0.7*" MinWidth="80" />
-                        <ColumnDefinition Width="52" />
+                        <ColumnDefinition Width="64" />
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
 
                     <Slider Grid.Column="1" Minimum="{Binding FreqLogMin}" Maximum="{Binding FreqLogMax}" SmallChange="0.01" LargeChange="0.1"
                             Value="{Binding FreqLog, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="Frequency (logarithmic: every octave gets the same travel)" />
-                    <TextBlock Grid.Column="2" Text="{Binding FreqText}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="2" Margin="6,0,0,0" Text="{Binding FreqEntry, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                             AutomationProperties.Name="Frequency">
+                        <TextBox.Style>
+                            <Style TargetType="TextBox" BasedOn="{StaticResource ValueBox}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding FreqInvalid}" Value="True">
+                                        <Setter Property="BorderBrush" Value="{StaticResource Danger}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBox.Style>
+                    </TextBox>
                     <Button Grid.Column="3" Style="{StaticResource ResetButton}" CommandParameter="{Binding FreqResetKey}"
                             Command="{Binding DataContext.Main.ResetCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
 
                     <Slider Grid.Column="5" Minimum="-6" Maximum="6" SmallChange="0.5" LargeChange="1" TickFrequency="0.5" IsSnapToTickEnabled="True"
                             Value="{Binding GainDb, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="Gain, -6 to +6 dB" />
-                    <TextBlock Grid.Column="6" Text="{Binding GainText}" HorizontalAlignment="Right" VerticalAlignment="Center" />
+                    <TextBox Grid.Column="6" Margin="6,0,0,0" Text="{Binding GainEntry, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                             AutomationProperties.Name="Gain">
+                        <TextBox.Style>
+                            <Style TargetType="TextBox" BasedOn="{StaticResource ValueBox}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding GainInvalid}" Value="True">
+                                        <Setter Property="BorderBrush" Value="{StaticResource Danger}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBox.Style>
+                    </TextBox>
                     <Button Grid.Column="7" Style="{StaticResource ResetButton}" CommandParameter="{Binding GainResetKey}"
                             Command="{Binding DataContext.Main.ResetCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
 
                     <Slider Grid.Column="9" Minimum="{Binding QMin}" Maximum="{Binding QMax}" SmallChange="0.05" LargeChange="0.25"
                             Value="{Binding Q, Mode=TwoWay}" VerticalAlignment="Center" ToolTip="Q: low = wide, high = narrow (0.5 - 4)"
                             Visibility="{Binding HasQ, Converter={StaticResource BoolToVis}}" />
-                    <TextBlock Grid.Column="10" Text="{Binding QText}" HorizontalAlignment="Right" VerticalAlignment="Center"
-                               Visibility="{Binding HasQ, Converter={StaticResource BoolToVis}}" />
+                    <TextBox Grid.Column="10" Margin="6,0,0,0" Text="{Binding QEntry, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                             AutomationProperties.Name="Q" Visibility="{Binding HasQ, Converter={StaticResource BoolToVis}}">
+                        <TextBox.Style>
+                            <Style TargetType="TextBox" BasedOn="{StaticResource ValueBox}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding QInvalid}" Value="True">
+                                        <Setter Property="BorderBrush" Value="{StaticResource Danger}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBox.Style>
+                    </TextBox>
                     <Button Grid.Column="11" Style="{StaticResource ResetButton}" CommandParameter="{Binding QResetKey}"
                             Command="{Binding DataContext.Main.ResetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                             Visibility="{Binding HasQ, Converter={StaticResource BoolToVis}}" />
                     <TextBlock Grid.Column="9" Grid.ColumnSpan="3" Text="shelf: no Q" Style="{StaticResource Dim}" FontSize="11"
                                VerticalAlignment="Center" Visibility="{Binding HasQ, Converter={StaticResource BoolToVisInv}}" />
+                    <Button Grid.Column="12" Style="{StaticResource SmallButton}" Margin="10,0,0,0" VerticalAlignment="Center"
+                            Content="Apply to..." Command="{Binding CopyToChannelsCommand}"
+                            ToolTip="Copy this band's settings to other channels (you choose which, and confirm first)" />
+                    <!-- validation / rounding message for the typed values -->
+                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="12" Text="{Binding EditMessage}" FontSize="11" Margin="0,4,0,0"
+                               TextWrapping="Wrap" Visibility="{Binding HasEditMessage, Converter={StaticResource BoolToVis}}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource Dim}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding EditIsError}" Value="True">
+                                        <Setter Property="Foreground" Value="{StaticResource Danger}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
                 </Grid>
             </Border>
         </DataTemplate>
@@ -121,7 +186,7 @@
                         <TextBlock Canvas.Left="144" Canvas.Top="146" Text="100 Hz" FontSize="9" Foreground="{StaticResource TextDim}" />
                         <TextBlock Canvas.Left="344" Canvas.Top="146" Text="1 kHz" FontSize="9" Foreground="{StaticResource TextDim}" />
                         <TextBlock Canvas.Left="544" Canvas.Top="146" Text="10 kHz" FontSize="9" Foreground="{StaticResource TextDim}" />
-                        <Polyline Points="{Binding Channel.Curve}" Stroke="{StaticResource Accent}" StrokeThickness="2" />
+                        <Polyline Points="{Binding Channel.Curve}" Stroke="{StaticResource AccentText}" StrokeThickness="2" />
                     </Canvas>
                 </Viewbox>
                 <TextBlock Text="{Binding Main.EqHeadroomText}" Style="{StaticResource Dim}" FontSize="11" Margin="0,6,0,0" TextWrapping="Wrap" />

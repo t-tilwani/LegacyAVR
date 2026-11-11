@@ -45,7 +45,9 @@ public sealed record Profile
     public GamingKind? Gaming { get; init; }
     public bool? GameLfeGen { get; init; }
     public double? LfeResetSeconds { get; init; }
-    /// <summary>v1.5.0: no subwoofer - fold the source's LFE into the fronts (true) or discard it.
+    /// <summary>v1.5.0: no subwoofer - fold the source's LFE into the fronts (true) or not. v1.6.0: false keeps
+    /// it in the LFE channel (1.5 discarded it), and the fold only acts while Engine Settings > Experimental >
+    /// LFE fold is on (a machine setting, never stored in profiles).
     /// Optional: profiles saved by 1.4 do not have it and stay complete (the setting is left as it is).</summary>
     public bool? LfeFold { get; init; }
     public double? BassDb { get; init; }

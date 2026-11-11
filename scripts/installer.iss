@@ -92,6 +92,8 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayIcon={app}\{#AppExe}
+; v1.6.0: Setup uses the LegacyAVR logo icon (the same file as the app icon).
+SetupIconFile={#RepoRoot}\ui\LegacyAVR.UI\Assets\LegacyAVR.ico
 UninstallDisplayName={#AppName}
 ; Close a running dashboard / engine (Restart Manager) if the code below could not.
 CloseApplications=force
@@ -483,9 +485,9 @@ begin
     'if its installer asks you to. Skip this if VB-CABLE is already installed.');
   CableButton := NewButton('Open the VB-CABLE download page', ScaleX(260), @CableButtonClick);
 
-  SoundLabel := NewLabel('2. In the Sound control panel, configure CABLE Input as 7.1 Surround (or 5.1) and set it ' +
-    'as the default playback device. Then start LegacyAVR and choose your HDMI / optical output. ' +
-    'The Setup guide tab in LegacyAVR walks you through every step.');
+  SoundLabel := NewLabel('2. In the Sound control panel, configure CABLE Input as 5.1 Surround (48 kHz) and set it ' +
+    'as the default playback device (7.1 also works but is folded down to 5.1). Then start LegacyAVR and choose ' +
+    'your HDMI / optical output. The Setup Guide tab in LegacyAVR walks you through every step.');
   SoundButton := NewButton('Open the Sound control panel', ScaleX(260), @SoundButtonClick);
 end;
 

@@ -140,6 +140,6 @@ only from the official website and follow its licence terms.
 
 ## 6. Third-party browser add-ons (mentioned, not included)
 
-The in-app Setup guide mentions an optional third-party Microsoft Edge add-on that requests 5.1 audio from one
+The in-app Setup Guide mentions an optional third-party Microsoft Edge add-on that requests 5.1 audio from one
 streaming service. It is made by an independent developer, is not part of LegacyAVR, is not distributed with
 it and is not endorsed by this project.

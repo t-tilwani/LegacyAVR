@@ -389,10 +389,12 @@ public class NoSubwooferTests
         var gen = MainViewModel.BuildLfeGenOptions();
         Assert.Equal(new[] { LfeGenKind.Auto, LfeGenKind.Always, LfeGenKind.Off }, gen.Select(o => o.Value));
         var fold = MainViewModel.BuildLfeFoldOptions();
-        Assert.Equal(new[] { true, false }, fold.Select(o => o.Value));   // fold is the first (recommended) choice
+        Assert.Equal(new[] { true, false }, fold.Select(o => o.Value));   // fold first (the saved value keeps its meaning)
         Assert.All(fold, o => Assert.DoesNotContain("generat", o.Label, StringComparison.OrdinalIgnoreCase));
         Assert.Contains("front", fold[0].Label);
-        Assert.Contains("discard", fold[1].Label);
+        // v1.6.0: the second choice keeps (passes through) the source LFE - nothing is ever discarded.
+        Assert.Contains("pass through", fold[1].Label);
+        Assert.All(fold, o => Assert.DoesNotContain("discard", o.Label, StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

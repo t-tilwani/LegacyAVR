@@ -50,6 +50,8 @@
     <ClInclude Include="core\OutputPolicy.h" />
     <ClInclude Include="core\ProcessingCore.h" />
     <ClInclude Include="core\Resampler.h" />
+    <ClInclude Include="core\Chime.h" />
+    <ClInclude Include="core\Version.h" />
     <ClInclude Include="core\StatusText.h" />
     <ClInclude Include="core\SpscRing.h" />
     <ClInclude Include="core\TestSignals.h" />
@@ -65,6 +67,7 @@
     <ClCompile Include="core\OutputPolicy.cpp" />
     <ClCompile Include="core\ProcessingCore.cpp" />
     <ClCompile Include="core\Resampler.cpp" />
+    <ClCompile Include="core\Chime.cpp" />
     <ClCompile Include="core\StatusText.cpp" />
     <ClCompile Include="core\TestSignals.cpp" />
     <ClCompile Include="core\Upmixer.cpp" />

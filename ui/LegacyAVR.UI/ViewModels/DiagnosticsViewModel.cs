@@ -115,7 +115,7 @@ public sealed class DiagnosticsViewModel : ObservableObject
         var idx = _stepIndex;
         var updated = noSub ? NoSubSteps(_subSteps) : _subSteps;
         for (int i = 0; i < Steps.Count && i < updated.Length; i++) Steps[i] = updated[i];
-        Speakers[3].Label = noSub ? "LFE\u2192fronts" : "LFE";
+        Speakers[3].Label = noSub ? "LFE (no sub)" : "LFE";
         _stepIndex = -1;
         StepIndex = idx;
         OnPropertyChanged(nameof(IsNoSub));
@@ -128,12 +128,13 @@ public sealed class DiagnosticsViewModel : ObservableObject
         {
             Title = s[0].Title,
             Signal = s[0].Signal,
-            Instructions = "Plays -20 dBFS pink noise on the selected speakers. There is no subwoofer, so the LFE noise is " +
-                           "folded into the front left and right speakers (low-passed at 120 Hz, -3 dB each; silent if the LFE " +
-                           "setting is 'discard'). Enable one speaker at a time and use an SPL meter " +
-                           "(or phone app, C-weighted, slow) at the listening position, then trim each speaker on the Mixer tab.",
-            ExpectedResult = "Every speaker reads within +/-1 dB of the others. With only 'LFE\u2192fronts' enabled, the bass " +
-                             "comes from the front pair.",
+            Instructions = "Plays -20 dBFS pink noise on the selected speakers. There is no subwoofer: when the output carries " +
+                           "an LFE channel the LFE noise is sent in it and your AVR (subwoofer set to None) redirects it, usually " +
+                           "to the front speakers; an output without an LFE channel, or the experimental LFE fold, mixes it into " +
+                           "front left and right instead (low-passed at 120 Hz, -3 dB each). Enable one speaker at a time and use " +
+                           "an SPL meter (or phone app, C-weighted, slow) at the listening position, then trim each speaker on the Mixer tab.",
+            ExpectedResult = "Every speaker reads within +/-1 dB of the others. With only 'LFE (no sub)' enabled, the bass " +
+                             "comes from the speakers the AVR (or the fold) sends it to - normally the front pair.",
         },
         new DiagnosticStep
         {
@@ -142,16 +143,18 @@ public sealed class DiagnosticsViewModel : ObservableObject
             Instructions = "A voice (or N beeps for channel N when speech is unavailable) announces each channel: Front left, " +
                            "Centre, Front right, Surround right, Surround left, Subwoofer. Without a subwoofer the " +
                            "'Subwoofer' announcement plays from the front pair.",
-            ExpectedResult = "Each announcement comes from the speaker it names; 'Subwoofer' from both front speakers. The AVR " +
-                             "should show Dolby Digital 3/2 (5.0) - there is no LFE channel in the stream.",
+            ExpectedResult = "Each announcement comes from the speaker it names; 'Subwoofer' from where the AVR redirects bass " +
+                             "(normally both front speakers). The AVR shows Dolby Digital 3/2.1 (5.1) when the cable is set up as " +
+                             "5.1, or 3/2 (5.0) when the input has no LFE channel or the experimental LFE fold is on.",
         },
         s[2],
         new DiagnosticStep
         {
             Title = "4. Bass redirect check",
             Signal = s[3].Signal,
-            Instructions = "Sweeps a tone from 20 Hz to 200 Hz on the LFE channel. With no subwoofer it is folded into the front " +
-                           "left and right speakers.",
+            Instructions = "Sweeps a tone from 20 Hz to 200 Hz on the LFE channel. With no subwoofer it reaches the front " +
+                           "speakers through the AVR's bass management (subwoofer set to None), or through LegacyAVR's fold " +
+                           "when the output has no LFE channel or the experimental LFE fold is on.",
             ExpectedResult = "Both front speakers play the sweep evenly; nothing comes from the centre or surrounds. Very low " +
                              "notes fading out is normal for small speakers.",
         },

@@ -28,6 +28,10 @@ public sealed class UiSettings
     public string? LastOutputDeviceId { get; set; }
     public string? LastOutputDeviceName { get; set; }
 
+    // ---- v1.6.0
+    /// <summary>Short chime when audio starts with the app and after a successful input change (default on).</summary>
+    public bool ActivationChime { get; set; } = true;
+
     // ---- read from older versions only (kept so a downgrade still finds them)
     public string? LastPreset { get; set; }
     public bool DefaultPresetsSeeded { get; set; }

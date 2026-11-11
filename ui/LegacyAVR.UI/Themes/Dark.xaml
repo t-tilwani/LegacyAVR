@@ -2,17 +2,26 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!-- ============================================================ palette -->
-    <Color x:Key="BgColor">#0F1115</Color>
-    <Color x:Key="SurfaceColor">#171A21</Color>
-    <Color x:Key="Surface2Color">#1E222B</Color>
-    <Color x:Key="HoverColor">#262B36</Color>
-    <Color x:Key="LineColor">#2A2F3A</Color>
-    <Color x:Key="TextColor">#E6E8EC</Color>
-    <Color x:Key="TextDimColor">#8B93A1</Color>
-    <Color x:Key="AccentColor">#4F8CFF</Color>
+    <!-- v1.6.0: built around the logo's red (#731012). The brand red is a secondary colour: the
+         surfaces are neutral charcoal, the logo red marks the brand (header, primary buttons, app
+         icon) and a lifted, slightly muted red (Accent) marks selected / switched-on controls.
+         Accent text uses a soft rose (AccentText) so it stays readable on the dark surfaces.
+         Status colours (Good / Warn / Danger / Info) are unchanged so a red control is never
+         mistaken for an error - errors use the brighter Danger red together with a message. -->
+    <Color x:Key="BgColor">#101012</Color>
+    <Color x:Key="SurfaceColor">#18181B</Color>
+    <Color x:Key="Surface2Color">#1F1F23</Color>
+    <Color x:Key="HoverColor">#29292E</Color>
+    <Color x:Key="LineColor">#2E2E34</Color>
+    <Color x:Key="TextColor">#E8E6E6</Color>
+    <Color x:Key="TextDimColor">#8F8D93</Color>
+    <Color x:Key="BrandColor">#731012</Color>
+    <Color x:Key="AccentColor">#A3282C</Color>
+    <Color x:Key="AccentTextColor">#E8A9AB</Color>
     <Color x:Key="GoodColor">#22C55E</Color>
     <Color x:Key="WarnColor">#F59E0B</Color>
     <Color x:Key="DangerColor">#EF4444</Color>
+    <Color x:Key="InfoColor">#4F8CFF</Color>
 
     <SolidColorBrush x:Key="Bg" Color="{StaticResource BgColor}" />
     <SolidColorBrush x:Key="Surface" Color="{StaticResource SurfaceColor}" />
@@ -21,7 +30,10 @@
     <SolidColorBrush x:Key="Line" Color="{StaticResource LineColor}" />
     <SolidColorBrush x:Key="Text" Color="{StaticResource TextColor}" />
     <SolidColorBrush x:Key="TextDim" Color="{StaticResource TextDimColor}" />
+    <SolidColorBrush x:Key="Brand" Color="{StaticResource BrandColor}" />
     <SolidColorBrush x:Key="Accent" Color="{StaticResource AccentColor}" />
+    <SolidColorBrush x:Key="AccentText" Color="{StaticResource AccentTextColor}" />
+    <SolidColorBrush x:Key="Info" Color="{StaticResource InfoColor}" />
     <SolidColorBrush x:Key="Good" Color="{StaticResource GoodColor}" />
     <SolidColorBrush x:Key="Warn" Color="{StaticResource WarnColor}" />
     <SolidColorBrush x:Key="Danger" Color="{StaticResource DangerColor}" />
@@ -104,7 +116,7 @@
         </Setter>
     </Style>
     <Style TargetType="Button" x:Key="AccentButton" BasedOn="{StaticResource {x:Type Button}}">
-        <Setter Property="Background" Value="{StaticResource Accent}" />
+        <Setter Property="Background" Value="{StaticResource Brand}" />
         <Setter Property="BorderBrush" Value="{StaticResource Accent}" />
         <Setter Property="Foreground" Value="White" />
     </Style>
@@ -329,7 +341,7 @@
                             <Setter TargetName="b" Property="Background" Value="{StaticResource Hover}" />
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="b" Property="Background" Value="#1F4F8CFF" />
+                            <Setter TargetName="b" Property="Background" Value="#33A3282C" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

@@ -43,6 +43,7 @@ struct OutputRequest {
     IecType passthroughIec = IecType::None; // pre-encoded input currently forwarded
     bool stereoPcmActive = false;           // StereoPcmSwitch state
     bool dedicatedSub = true;
+    bool inputHasLfe = true;                // v1.6.0: the capture format has an LFE channel
     uint16_t devicePcmChannels = 2;         // channels of the device mix format (2/6/8)
 };
 
@@ -51,7 +52,8 @@ struct OutputPlan {
     uint16_t pcmChannels = 2;       // PCM path channel count
     bool stereoPcm = false;         // opened as PCM 2.0 because of PcmDirect
     IecType iec = IecType::None;    // renderer IEC sub-format (None => PCM)
-    uint16_t encoderChannels = 6;   // 6 = 5.1, 5 = 5.0 (no subwoofer)
+    uint16_t encoderChannels = 6;   // main encoder: 6 = 5.1, 5 = 5.0 (v1.6.0: only without a
+                                    // subwoofer AND without an input LFE - a source LFE is passed through)
 };
 
 [[nodiscard]] OutputPlan planOutput(const OutputRequest& r) noexcept;

@@ -7,7 +7,8 @@
 //    Uses the same crossover / LFE level as the upmixer so both sound alike.
 //    Source = FL + FR + FC + SL + SR. Only with a dedicated subwoofer (v1.5.0: without one
 //    LegacyAVR never generates an LFE channel).
-//  * LFE fold (v1.5.0, outputs without an LFE channel): the source's own LFE is low-passed
+//  * LFE fold (v1.5.0; v1.6.0: required when the output has no LFE channel, optional and
+//    experimental without a subwoofer - otherwise the LFE is passed through untouched): the source's own LFE is low-passed
 //    (LR4, 120 Hz - the LFE band limit, removes out-of-band rubbish), added to FL and FR at
 //    -3 dB each (equal power: the pair carries the LFE at its original power) and the LFE
 //    plane is cleared. Gain changes are ramped. The safety limiter after it guarantees the
@@ -48,10 +49,11 @@ public:
     float generateLfe(float* const* bus, size_t frames, bool enable) noexcept;
     [[nodiscard]] float generatorGain() const noexcept { return genGain_; }
 
-    // Output without an LFE channel: `enable` folds the (filtered) LFE into FL + FR, otherwise
-    // it is discarded. The LFE plane is always cleared. The fold gain ramps over the block
-    // when `enable` changes, so switching never clicks.
-    void foldLfeIntoFronts(float* const* bus, size_t frames, bool enable) noexcept;
+    // `enable` folds the (filtered) LFE into FL + FR; the fold gain ramps over the block when
+    // `enable` changes, so switching never clicks. `clearLfe` empties the LFE plane afterwards
+    // (true while folding; false while ramping the fold out because the LFE is passed through
+    // again - v1.6.0).
+    void foldLfeIntoFronts(float* const* bus, size_t frames, bool enable, bool clearLfe = true) noexcept;
     [[nodiscard]] float foldGain() const noexcept { return foldGain_; }
 
 private:

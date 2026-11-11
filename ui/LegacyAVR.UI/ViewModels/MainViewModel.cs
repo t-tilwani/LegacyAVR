@@ -44,6 +44,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private DateTime _nextReconnect = DateTime.MinValue;
     private bool _launching;
     private uint _lastEmitMask = uint.MaxValue, _lastEmitChannels = uint.MaxValue;
+    private bool _lfeFoldedNow, _lastFoldedForNames;
     private readonly DispatcherTimer _gameTimer;
     private bool _gameReported;          // last GAME_DETECTED value sent to the engine
     private DateTime _lastGameBeat = DateTime.MinValue;
@@ -52,6 +53,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private bool _startupDone;                  // v1.4.0: default output / last profile handled once per session
     private List<DeviceItem> _rawDevices = new();
     private string? _engineOutputId;            // what the engine has configured (may be disconnected)
+    private readonly ChimeScheduler _chime = new();   // v1.6.0 activation chime
 
     /// <summary>Asks the user a yes/no question (replaceable in tests).</summary>
     public Func<string, bool> Confirm { get; set; } = q =>
@@ -136,6 +138,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _gameTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
         _gameTimer.Tick += (_, _) => OnGameTick();
         OpenStreamingExtensionCommand = new RelayCommand(() => Shell(StreamingExtensionUrl));
+        OpenVbCableCommand = new RelayCommand(() => Shell(VbCableUrl));
+        PlayChimeCommand = new RelayCommand(() => _ = PlayChimeAsync());
+        _chime.Enabled = _settings.Settings.ActivationChime;
         RebuildUpmixOptions();
         RefreshProfiles(_activeProfile);
     }
@@ -213,14 +218,16 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         new Option<LfeGenKind>("Off", LfeGenKind.Off),
     };
 
-    /// <summary>v1.5.0: the same LFE switch without a subwoofer. Nothing is generated then; it
-    /// decides what happens to an LFE the source already has.</summary>
+    /// <summary>v1.5.0: the LFE switch without a subwoofer. v1.6.0: experimental (shown only when
+    /// Engine Settings > Experimental > LFE fold is on) and the discard option is gone - a source
+    /// LFE is either folded into the fronts or passed through in the LFE channel, never dropped.
+    /// The saved value keeps its meaning: true = fold, false = keep (formerly "discard").</summary>
     public IReadOnlyList<Option<bool>> LfeFoldOptions { get; } = BuildLfeFoldOptions();
 
     public static IReadOnlyList<Option<bool>> BuildLfeFoldOptions() => new[]
     {
-        new Option<bool>("Fold the source's LFE into front L/R (recommended)", true),
-        new Option<bool>("Off - discard the source's LFE", false),
+        new Option<bool>("Fold the source's LFE into front L/R", true),
+        new Option<bool>("Keep it in the LFE channel (pass through to the AVR)", false),
     };
     public IReadOnlyList<Option<GamingKind>> GamingOptions { get; } = new[]
     {
@@ -271,8 +278,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public ICommand OpenClassicSoundCommand { get; }
     public ICommand SetStatsModeCommand { get; }
     public ICommand OpenStreamingExtensionCommand { get; }
+    /// <summary>v1.6.0: Setup Guide - the VB-CABLE download page in the default browser.</summary>
+    public ICommand OpenVbCableCommand { get; }
+    /// <summary>v1.6.0: Engine Settings - play the activation chime once (test / preview).</summary>
+    public ICommand PlayChimeCommand { get; }
+    public const string VbCableUrl = "https://vb-audio.com/Cable/";
 
-    /// <summary>Optional third-party Edge add-on mentioned in the Setup guide (not made or endorsed by LegacyAVR).</summary>
+    /// <summary>Optional third-party Edge add-on mentioned in the Setup Guide (not made or endorsed by LegacyAVR).</summary>
     public const string StreamingExtensionUrl =
         "https://microsoftedge.microsoft.com/addons/detail/51-surround-for-netflix/binkliomfaficonojepgobcoekpfapnj";
 
@@ -281,7 +293,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public DeviceItem? SelectedInputDevice
     {
         get => _selectedInput;
-        set { if (Set(ref _selectedInput, value) && !_syncing && value != null) Send($"SET_INPUT_DEVICE {Proto.Quote(value.Id)}"); }
+        set { if (Set(ref _selectedInput, value) && !_syncing && value != null) _ = ApplyInputDeviceAsync(value); }
     }
     public DeviceItem? SelectedOutputDevice
     {
@@ -512,8 +524,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private bool _dedicatedSub = true;
     private DateTime _subChangedUtc = DateTime.MinValue;
-    /// <summary>Dedicated subwoofer active/inactive switch (Bass &amp; Subwoofer card). Off = no subwoofer: no LFE
-    /// channel is sent or generated; the source's own LFE is folded into the fronts (or discarded, see <see cref="LfeFold"/>).</summary>
+    /// <summary>Dedicated subwoofer active/inactive switch (Bass &amp; Subwoofer card). Off = no subwoofer: no LFE is
+    /// generated and the upmix creates none (3.0 / 5.0); v1.6.0: a source LFE is still passed through when the output
+    /// can carry it, so the AVR's own bass management handles it (the fold is experimental, see <see cref="ExpLfeFold"/>).</summary>
     public bool DedicatedSub
     {
         get => _dedicatedSub;
@@ -523,9 +536,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(IsNoSub));
             OnPropertyChanged(nameof(SubToggleText));
             OnPropertyChanged(nameof(LfeControlsNote));
-            OnPropertyChanged(nameof(LfeCardCaption));
-            OnPropertyChanged(nameof(LfeModeNote));
-            OnPropertyChanged(nameof(GameLfeText));
+            NotifyLfeTexts();
             ApplySubLayout();
             RebuildUpmixOptions();
             if (_syncing) return;
@@ -534,20 +545,69 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
     }
     public bool IsNoSub => !_dedicatedSub;
-    /// <summary>v1.5.0: without a subwoofer nothing creates an LFE, so the LFE crossover / level
-    /// sliders have no effect (they are disabled and keep their values).</summary>
+    /// <summary>Without a subwoofer nothing creates an LFE, so the LFE crossover / level sliders have
+    /// no effect (they are disabled and keep their values).</summary>
     public string LfeControlsNote => _dedicatedSub
-        ? "LFE crossover and LFE level set the subwoofer channel of the Dynamic upmix and of LFE generation."
-        : "No subwoofer: no LFE channel is created, so LFE crossover and LFE level have no effect (their values are kept for when a subwoofer is active).";
+        ? "LFE crossover and LFE level set the subwoofer channel of the Dynamic 3.1 / 5.1 upmix (and of experimental LFE generation, when enabled)."
+        : "No subwoofer: the upmix creates no LFE, so LFE crossover and LFE level have no effect (their values are kept for when a subwoofer is active).";
 
-    /// <summary>v1.5.0: the LFE card is about generation with a subwoofer and about the source's own LFE without one.</summary>
-    public string LfeCardCaption => _dedicatedSub
-        ? "LFE GENERATION  (sources without their own subwoofer channel)"
-        : "SOURCE LFE WITHOUT A SUBWOOFER";
-    public string LfeModeNote => _dedicatedSub
-        ? "Creates an LFE channel for sources that have none (5.0 \u2192 5.1, and with Always stereo \u2192 2.1). Sources with their own LFE are never changed."
-        : "No subwoofer: LegacyAVR never generates an LFE channel and sends 3.0 / 5.0. This switch decides what happens to an LFE the source already has (5.1, 7.1 films and games): " +
-          "folded into the front left and right speakers (low-passed at 120 Hz, -3 dB each, the safety limiter prevents clipping) or discarded. The LFE trim on the Mixer sets how loud the folded bass is.";
+    // ----- v1.6.0: experimental LFE gates (Engine Settings). Both off by default and after upgrades.
+    private bool _expLfeGen, _expLfeFold;
+    /// <summary>Experimental LFE generation. While off, the saved mode and Game Mode's LFE toggle are kept but ignored.</summary>
+    public bool ExpLfeGen
+    {
+        get => _expLfeGen;
+        set
+        {
+            if (!Set(ref _expLfeGen, value)) return;
+            NotifyLfeTexts();
+            if (!_syncing) Send($"SET_EXP_LFE_GEN {(value ? 1 : 0)}");
+        }
+    }
+    /// <summary>Experimental optional fold of a source LFE into the fronts (no subwoofer only).</summary>
+    public bool ExpLfeFold
+    {
+        get => _expLfeFold;
+        set
+        {
+            if (!Set(ref _expLfeFold, value)) return;
+            NotifyLfeTexts();
+            ApplySubLayout();
+            if (!_syncing) Send($"SET_EXP_LFE_FOLD {(value ? 1 : 0)}");
+        }
+    }
+    /// <summary>The experimental fold is in effect (gate on, fold chosen, no subwoofer).</summary>
+    public bool IsOptionalFoldActive => _expLfeFold && LfeFold && !_dedicatedSub;
+    /// <summary>The LFE card in Upmixing &amp; Audio Settings only appears once an experimental gate is on.</summary>
+    public bool ShowLfeCard => _expLfeGen || _expLfeFold;
+
+    private void NotifyLfeTexts()
+    {
+        OnPropertyChanged(nameof(LfeControlsNote));
+        OnPropertyChanged(nameof(LfeGenNote));
+        OnPropertyChanged(nameof(LfeFoldNote));
+        OnPropertyChanged(nameof(GameLfeText));
+        OnPropertyChanged(nameof(ShowLfeCard));
+        OnPropertyChanged(nameof(IsOptionalFoldActive));
+        OnPropertyChanged(nameof(IsGeneralLfeGenEnabled));
+        OnPropertyChanged(nameof(LfeOverrideText));
+        OnPropertyChanged(nameof(LfeHandlingText));
+    }
+
+    public string LfeGenNote => _dedicatedSub
+        ? "Experimental. Creates an LFE channel for sources that have none (5.0 \u2192 5.1, and with Always stereo \u2192 2.1). Sources with their own LFE are never changed."
+        : "Experimental, and only with a dedicated subwoofer: with \"Dedicated subwoofer\" inactive nothing is generated (your setting is kept).";
+    public string LfeFoldNote => !_dedicatedSub
+        ? (LfeFold
+            ? "Experimental and in effect: a source LFE (5.1 / 7.1 films and games) is low-passed at 120 Hz and added to the front left and right speakers at -3 dB each; Dolby / DTS are then sent as 5.0 (PCM keeps a silent LFE slot). The safety limiter prevents clipping and the LFE trim on the Mixer sets the level."
+            : "Experimental, set to keep: a source LFE stays in the LFE channel, as without the experimental option.")
+        : "Only applies with \"Dedicated subwoofer\" inactive. With a subwoofer the source LFE always goes to the LFE channel.";
+    /// <summary>One line under the subwoofer switch: what happens to a source LFE with the current settings.</summary>
+    public string LfeHandlingText => _dedicatedSub
+        ? "A source LFE goes to the subwoofer channel."
+        : IsOptionalFoldActive
+            ? "No subwoofer: a source LFE is folded into the front speakers (experimental fold is on)."
+            : "No subwoofer: a source LFE is still sent in the LFE channel (5.1), so your AVR's bass management can play it. Outputs without an LFE channel (PCM 2.0) fold it into the fronts.";
     /// <summary>"Dedicated subwoofer active (5.1)" / "Dedicated subwoofer inactive (5.0)" - the
     /// layout in brackets is what is actually being output right now.</summary>
     public string SubToggleText => SubLabel(_dedicatedSub, _outputLayout);
@@ -575,10 +635,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         if (Channels.Count > 3)
         {
             if (_dedicatedSub) Channels[3].Relabel("LFE", "Subwoofer (LFE)");
-            else if (LfeFold) Channels[3].Relabel("LFE \u2192 FL/FR", "Source LFE (folded into the fronts)");
-            else Channels[3].Relabel("LFE (off)", "Source LFE (discarded - no subwoofer)");
+            else if (IsOptionalFoldActive) Channels[3].Relabel("LFE \u2192 FL/FR", "Source LFE (folded into the fronts - experimental)");
+            else Channels[3].Relabel("LFE", "Source LFE (passed to the AVR - no subwoofer)");
             if (EqChannels is { Count: > 3 })
-                EqChannels[3].Name = _dedicatedSub ? "Subwoofer (LFE)" : LfeFold ? "LFE \u2192 FL/FR (no subwoofer)" : "LFE (discarded, no subwoofer)";
+                EqChannels[3].Name = _dedicatedSub ? "Subwoofer (LFE)" : IsOptionalFoldActive ? "LFE \u2192 FL/FR (experimental fold)" : "LFE (no subwoofer, passed to the AVR)";
         }
         Diagnostics.SetNoSubwoofer(!_dedicatedSub);
         _lastEmitMask = uint.MaxValue;   // meter names / dimmed LFE follow the switch on the next tick
@@ -604,6 +664,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             if (!Set(ref _lfeFold, value) || value is null) return;
             OnPropertyChanged(nameof(LfeFold));
+            NotifyLfeTexts();
             ApplySubLayout();
             if (!_syncing) Send($"SET_LFE_FOLD {(value.Value ? 1 : 0)}");
         }
@@ -615,12 +676,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>The general LFE-generation control is disabled while Game Mode's own LFE toggle
-    /// is on AND a game is active, because that toggle overrides it.</summary>
-    public bool IsGeneralLfeGenEnabled => !(_gameLfeGen && _gamingActive);
-    /// <summary>v1.5.0: Game Mode's LFE generation only exists with a dedicated subwoofer.</summary>
+    /// is on AND a game is active, because that toggle overrides it (only while generation is enabled).</summary>
+    public bool IsGeneralLfeGenEnabled => !(_expLfeGen && _gameLfeGen && _gamingActive);
+    /// <summary>Game Mode's LFE generation: experimental, and only with a dedicated subwoofer.</summary>
     public string GameLfeText => _dedicatedSub
-        ? "On: while a game is active, every source without its own LFE gets one (5.0 to 5.1, stereo to 2.1). Games that use their own LFE pause it, exactly like Auto."
-        : "Needs a dedicated subwoofer - without one no LFE is generated, in games or otherwise (the setting is kept).";
+        ? "Experimental. On: while a game is active, every source without its own LFE gets one (5.0 to 5.1, stereo to 2.1). Games that use their own LFE pause it, exactly like Auto."
+        : "Experimental, and needs a dedicated subwoofer - without one no LFE is generated, in games or otherwise (the setting is kept).";
     public string LfeOverrideText => IsGeneralLfeGenEnabled
         ? string.Empty
         : "Overridden by Game Mode: LFE generation is on while this game is running.";
@@ -766,6 +827,18 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         get => _settings.Settings.StopEngineOnExit;
         set { _settings.Settings.StopEngineOnExit = value; _settings.Save(); OnPropertyChanged(); }
+    }
+    /// <summary>v1.6.0: short chime when audio starts with LegacyAVR and after a successful input change.</summary>
+    public bool ActivationChime
+    {
+        get => _settings.Settings.ActivationChime;
+        set
+        {
+            _settings.Settings.ActivationChime = value;
+            _settings.Save();
+            _chime.Enabled = value;
+            OnPropertyChanged();
+        }
     }
     public bool StartWithWindows
     {
@@ -1065,6 +1138,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                              ?? GamingOptions.First(o => o.Value == FactoryDefaults.Gaming);
             GameLfeGen = S("game_lfe_gen", FactoryDefaults.GameLfeGen ? "1" : "0") == "1";
             LfeFold = S("lfe_fold", FactoryDefaults.LfeFold ? "1" : "0") == "1";
+            ExpLfeGen = S("exp_lfe_gen", FactoryDefaults.ExpLfeGen ? "1" : "0") == "1";
+            ExpLfeFold = S("exp_lfe_fold", FactoryDefaults.ExpLfeFold ? "1" : "0") == "1";
             LfeResetSeconds = D("lfe_reset_s", 10);
             NightMode = B("night_mode");
             StereoAs20 = B("stereo_as_20");
@@ -1095,6 +1170,25 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             _syncing = false;
         }
         RebuildDeviceLists();
+    }
+
+    /// <summary>v1.6.0: applies the input; the chime is armed only when the engine accepted it.</summary>
+    private async Task ApplyInputDeviceAsync(DeviceItem device)
+    {
+        var r = await _client.SendAsync($"SET_INPUT_DEVICE {Proto.Quote(device.Id)}");
+        if (r.Ok) _chime.InputChangeAccepted(DateTime.UtcNow);
+        else
+        {
+            _chime.InputChangeFailed();
+            LastCommandError = r.Message;
+        }
+    }
+
+    /// <summary>v1.6.0: asks the engine for the chime; it says why when it cannot play it.</summary>
+    private async Task PlayChimeAsync()
+    {
+        var r = await _client.SendAsync("PLAY_CHIME");
+        if (!r.Ok) LastCommandError = "Chime not played: " + r.Message;
     }
 
     private void Send(string command)
@@ -1463,6 +1557,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         UpdateV12(t, flags);
 
+        // v1.6.0 activation chime (startup / successful input change), at most one at a time.
+        bool healthy = !IsAudioStopped && state is EngineState.Running or EngineState.Idle;
+        bool chimeReady = _startupDone && !_launching && !_applyingProfile;
+        if (_chime.Tick(healthy, chimeReady, state == EngineState.Error, DateTime.UtcNow)) _ = PlayChimeAsync();
+
         unsafe
         {
             UpdateInputMeterNames(t.InChannelMask, t.InChannels);
@@ -1477,11 +1576,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 OutputMeters[i].PeakDb = t.EmitPeakDb[i];
                 OutputMeters[i].RmsDb = t.EmitRmsDb[i];
             }
-            bool noLfeOut = t.HasFlag2(TelemetryFlags2.NoLfeOutput);
+            bool folded = t.HasFlag2(TelemetryFlags2.LfeFolded);
             for (int i = 0; i < 6; i++)
             {
                 var ch = Channels[i];
-                bool foldedLfe = noLfeOut && i == 3;   // no LFE output: show the source LFE (folded or discarded)
+                bool foldedLfe = folded && i == 3;   // folded into the fronts: show the source LFE level
                 ch.PeakDb = foldedLfe ? t.LfeFoldPeakDb : t.OutPeakDb[i];
                 ch.RmsDb = foldedLfe ? t.LfeFoldRmsDb : t.OutRmsDb[i];
                 ch.IsActive = t.OutChannels != 2 || i < 2 || (TestSignalKind)t.TestSignal != TestSignalKind.Off;
@@ -1561,7 +1660,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void UpdateV12(in TelemetryBlock t, TelemetryFlags flags)
     {
         bool running = !IsAudioStopped && (EngineState)t.EngineState is EngineState.Running or EngineState.Idle;
-        bool lfeOut = !t.HasFlag2(TelemetryFlags2.NoLfeOutput);
+        // v1.6.0: the LFE counts only when the block had an LFE channel and did not fold it.
+        bool lfeOut = !t.HasFlag2(TelemetryFlags2.NoLfeOutput) && !t.HasFlag2(TelemetryFlags2.LfeFolded);
+        _lfeFoldedNow = t.HasFlag2(TelemetryFlags2.LfeFolded);
         ProcessingText = !running ? (IsAudioStopped ? "Audio pipeline stopped" : "-") : t.ProcessingTextValue;
         PcmSwitchText = running ? t.PcmSwitchTextValue : string.Empty;
         OutputIsPassthrough = running && t.EmitChannels == 0 && flags.HasFlag(TelemetryFlags.Passthrough);
@@ -1585,7 +1686,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         LfeStatusBrush = !running ? IdleBrush : lfe switch
         {
             LfeStatusKind.Source => GoodBrush,
-            LfeStatusKind.Generated or LfeStatusKind.Upmixed => InfoBrush,
+            LfeStatusKind.Generated or LfeStatusKind.Upmixed or LfeStatusKind.Folded => InfoBrush,
             LfeStatusKind.Inhibited or LfeStatusKind.Dropped => WarnBrush,
             _ => IdleBrush,
         };
@@ -1649,7 +1750,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     private void UpdateOutputMeterNames(uint mask, uint channels)
     {
-        if (mask == _lastEmitMask && channels == _lastEmitChannels) return;
+        if (mask == _lastEmitMask && channels == _lastEmitChannels && _lfeFoldedNow == _lastFoldedForNames) return;
+        _lastFoldedForNames = _lfeFoldedNow;
         _lastEmitMask = mask;
         _lastEmitChannels = channels;
         var names = new List<string>();
@@ -1660,7 +1762,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             // Silent slots: the LFE without a subwoofer, and the back pair of a 7.1 device (the bus is 5.1).
             var n = i < names.Count ? names[i] : i < channels ? OutNames71[i] : "-";
-            bool silent = (IsNoSub && n == "LFE") || (channels == 8 && n is "BL" or "BR");
+            bool silent = (_lfeFoldedNow && n == "LFE") || (channels == 8 && n is "BL" or "BR");
             OutputMeters.Add(new InputMeterViewModel(n) { IsPresent = i < channels && !silent });
         }
     }

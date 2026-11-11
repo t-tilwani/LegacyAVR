@@ -73,7 +73,7 @@ float BassManager::generateLfe(float* const* bus, size_t frames, bool enable) no
     return genGain_;
 }
 
-void BassManager::foldLfeIntoFronts(float* const* bus, size_t frames, bool enable) noexcept {
+void BassManager::foldLfeIntoFronts(float* const* bus, size_t frames, bool enable, bool clearLfe) noexcept {
     float* lfe = bus[LFE];
     const float target = enable ? kFoldGain : 0.0f;
     if (target > 0.0f || foldGain_ > 0.0f) {
@@ -94,7 +94,7 @@ void BassManager::foldLfeIntoFronts(float* const* bus, size_t frames, bool enabl
     } else {
         foldLp_.reset();   // next fold starts from a clean filter
     }
-    std::memset(lfe, 0, frames * sizeof(float));
+    if (clearLfe) std::memset(lfe, 0, frames * sizeof(float));
 }
 
 } // namespace avr

@@ -43,9 +43,16 @@ struct EngineConfig {
                                     // (v1.4.0: whole seconds 1..300, default 10)
     // v1.4.0
     EqConfig eq = eqDefaultConfig();   // custom per-channel EQ (master off, every band flat)
-    // v1.5.0: output without an LFE channel (no subwoofer / PCM 2.0) - fold the source's own LFE
-    // into the front speakers (true; what every earlier version did) or discard it.
+    // v1.5.0: no subwoofer - fold the source's own LFE into the front speakers (true) or not.
+    // v1.6.0: only honoured while expLfeFold is on; false now passes the LFE through (1.5
+    // discarded it). An output without an LFE channel (PCM 2.0) always folds.
     bool lfeFold = true;
+    // v1.6.0 experimental gates: off for new installs AND after every upgrade - the file stamps
+    // them with the version that saved them (exp_gates_version) and any other version loads them
+    // as off. The settings they guard (lfeGen, gameLfeGen, lfeFold) are loaded and saved
+    // unchanged but not honoured while off.
+    bool expLfeGen = false;
+    bool expLfeFold = false;
 };
 
 // Defaults a file written by an older version implies for keys it does not contain (v1.5.0

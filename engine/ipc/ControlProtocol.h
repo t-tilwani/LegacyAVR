@@ -30,8 +30,13 @@
 //   SET_SUB 0|1                           dedicated subwoofer active (1) / inactive (0) (v1.2.0)
 //   SET_LFE_GEN OFF|AUTO|ALWAYS           5.0 -> 5.1 LFE generation                   (v1.2.0)
 //                                         (v1.5.0: only with a dedicated subwoofer)
-//   SET_LFE_FOLD 0|1                      output without an LFE channel: fold the source's
-//                                         LFE into FL/FR (1, default) or discard it (0) (v1.5.0)
+//   SET_LFE_FOLD 0|1                      no subwoofer + experimental fold on: fold the source's
+//                                         LFE into FL/FR (1) or keep it in the LFE channel (0)
+//                                         (v1.5.0; v1.6.0 meaning)
+//   SET_EXP_LFE_GEN 0|1                   experimental gate for LFE generation (v1.6.0)
+//   SET_EXP_LFE_FOLD 0|1                  experimental gate for the optional LFE fold (v1.6.0)
+//   PLAY_CHIME                            play the activation chime once through the output;
+//                                         ERR with the reason when it cannot (v1.6.0)
 //   SET_GAMING AUTO|ON|OFF                game handling mode                          (v1.2.0)
 //   SET_GAME_LFE 0|1                      Game Mode's own LFE generation toggle       (v1.3.0)
 //   SET_LFE_RESET <seconds>               native-LFE latch reset interval: whole seconds
@@ -71,6 +76,7 @@ enum class Cmd {
     SetUpmix, SetUpmixParam, SetStereoAs20, SetNightMode, SetMaster, SetGain, SetMute, SetMuteAll,
     Test, Restart, Shutdown, StopAudio, StartAudio,
     SetBass, SetSub, SetLfeGen, SetGaming, GameDetected, SetGameLfe, SetLfeReset, SetLfeFold,
+    SetExpLfeGen, SetExpLfeFold, PlayChime,
     SetEq, SetEqChannel, SetEqBand, ResetEqChannel, SetAudition,
 };
 

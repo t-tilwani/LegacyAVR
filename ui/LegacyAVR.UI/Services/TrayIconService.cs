@@ -14,8 +14,11 @@ public sealed class TrayIconService : IDisposable
     private readonly NotifyIcon _icon;
     private readonly ToolStripMenuItem _muteItem;
     private readonly ToolStripMenuItem _presetMenu;
-    private readonly Icon _normal = IconFactory.CreateIcon(32, false);
-    private readonly Icon _muted = IconFactory.CreateIcon(32, true);
+    // v1.6.0: the notification area shows small icons - use the image drawn for that size
+    // (16 px at 100 % scaling, larger at higher system DPI) rather than shrinking a 32 px one.
+    private static int TrayIconSize => Math.Max(16, SystemInformation.SmallIconSize.Width);
+    private readonly Icon _normal = IconFactory.CreateIcon(TrayIconSize, false);
+    private readonly Icon _muted = IconFactory.CreateIcon(TrayIconSize, true);
 
     public event EventHandler? ShowRequested;
     public event EventHandler<bool>? MuteAllToggled;
@@ -30,7 +33,7 @@ public sealed class TrayIconService : IDisposable
             ShowImageMargin = false,
             ShowCheckMargin = true,   // keeps the "Mute All" / active-preset check marks
         };
-        menu.ForeColor = Color.FromArgb(0xE6, 0xE8, 0xEC);
+        menu.ForeColor = Color.FromArgb(0xE8, 0xE6, 0xE6);
         menu.Font = new Font("Segoe UI", 9.5f);
 
         var show = new ToolStripMenuItem("Show Dashboard") { Font = new Font("Segoe UI", 9.5f, FontStyle.Bold) };
@@ -69,7 +72,7 @@ public sealed class TrayIconService : IDisposable
             var item = new ToolStripMenuItem(p.Name)
             {
                 Checked = string.Equals(p.Name, active, StringComparison.OrdinalIgnoreCase),
-                ForeColor = Color.FromArgb(0xE6, 0xE8, 0xEC),
+                ForeColor = Color.FromArgb(0xE8, 0xE6, 0xE6),
                 ToolTipText = p.Display,
             };
             var captured = p;
@@ -111,9 +114,9 @@ public sealed class TrayIconService : IDisposable
 
     private sealed class DarkColors : ProfessionalColorTable
     {
-        private static readonly Color Bg = Color.FromArgb(0x1E, 0x22, 0x2B);
-        private static readonly Color Hover = Color.FromArgb(0x2C, 0x33, 0x40);
-        private static readonly Color Line = Color.FromArgb(0x2A, 0x2F, 0x3A);
+        private static readonly Color Bg = Color.FromArgb(0x1F, 0x1F, 0x23);
+        private static readonly Color Hover = Color.FromArgb(0x29, 0x29, 0x2E);
+        private static readonly Color Line = Color.FromArgb(0x2E, 0x2E, 0x34);
         public override Color ToolStripDropDownBackground => Bg;
         public override Color MenuBorder => Line;
         public override Color MenuItemBorder => Hover;
@@ -127,7 +130,9 @@ public sealed class TrayIconService : IDisposable
         public override Color ImageMarginGradientEnd => Bg;
         public override Color SeparatorDark => Line;
         public override Color SeparatorLight => Bg;
-        public override Color CheckBackground => Color.FromArgb(0x4F, 0x8C, 0xFF);
-        public override Color CheckSelectedBackground => Color.FromArgb(0x4F, 0x8C, 0xFF);
+        // v1.6.0: brand colours (Themes\Dark.xaml): check mark tile in the accent red.
+        public override Color CheckBackground => Color.FromArgb(0xA3, 0x28, 0x2C);
+        public override Color CheckSelectedBackground => Color.FromArgb(0xA3, 0x28, 0x2C);
+        public override Color CheckPressedBackground => Color.FromArgb(0x73, 0x10, 0x12);
     }
 }

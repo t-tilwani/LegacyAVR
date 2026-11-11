@@ -674,24 +674,27 @@ struct FeatureRig {
 };
 } // namespace
 
-TEST(Features, NoSubwoofer_EncodesFiveChannelsAndFoldsLfe) {
+// v1.6.0: without a dedicated subwoofer a 5.1 source stays 5.1 - its LFE is passed through so
+// the AVR's own bass management can use it (no fold, no discard by default).
+TEST(Features, NoSubwoofer_PassesSourceLfeThrough) {
     FeatureRig rig;
     rig.params.upmixMode = static_cast<uint32_t>(UpmixMode::Passthrough);
-    rig.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Off);
     CHECK(rig.configure(false));
     // Discrete 5.1 with LFE content (50 Hz on the LFE capture channel 3).
     rig.run(2000, 0b01000111, 0b00001000);
-    CHECK_EQ(rig.core.stats.encoderChannels.load(), 5u);
-    CHECK_EQ(rig.core.stats.emitChannels.load(), 5u);
-    CHECK((rig.core.stats.emitMask.load() & SPK_LFE) == 0);
-    CHECK(rig.outRmsDb(LFE) < -90.0f);                     // nothing left on the LFE plane
-    CHECK(linToDb(rig.core.lfeFoldMeter.rms(0)) > -30.0f);  // ...because it went to the fronts
+    CHECK_EQ(rig.core.stats.encoderChannels.load(), 6u);
+    CHECK_EQ(rig.core.stats.emitChannels.load(), 6u);
+    CHECK((rig.core.stats.emitMask.load() & SPK_LFE) != 0);
+    CHECK(rig.outRmsDb(LFE) > -30.0f);                      // the source LFE is still in the LFE channel
+    CHECK(rig.core.stats.lfeChannelOut.load());
+    CHECK(!rig.core.stats.lfeFolded.load());
     CHECK(static_cast<LfeStatus>(rig.core.stats.lfeStatus.load()) == LfeStatus::Source);
 }
 
 TEST(Features, LfeGeneration_AutoWaitsForConfirmed50Source) {
     FeatureRig rig;
     rig.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Auto);
+    rig.params.expLfeGen = true;   // v1.6.0: generation is experimental
     CHECK(rig.configure(true));
     // 5.0 source (FL FR C SL SR, no LFE) with bass in the centre.
     const uint32_t five0 = 0b11000111;
@@ -720,6 +723,7 @@ TEST(Features, LfeGeneration_AlwaysCoversKeptStereo) {
     FeatureRig rig;
     rig.params.upmixMode = static_cast<uint32_t>(UpmixMode::Passthrough);
     rig.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Always);
+    rig.params.expLfeGen = true;   // v1.6.0: generation is experimental
     CHECK(rig.configure(true));
     rig.run(2000, 0b11, 0b11);
     CHECK_EQ(rig.core.stats.procState.load(), uint32_t(ProcessingState::StereoLfeGen));
@@ -802,6 +806,7 @@ ProcessingState procOf(const FeatureRig& r) { return static_cast<ProcessingState
 TEST(LfeInhibit, NativeLfeStopsAutoGenerationForTheSession) {
     FeatureRig rig;
     rig.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Auto);
+    rig.params.expLfeGen = true;   // v1.6.0: generation is experimental
     CHECK(rig.configure(true));
     // A 5.1 source with a quiet LFE looks like 5.0 by activity: Auto generates (v1.2 behaviour).
     rig.run(4000, k51QuietLfe);
@@ -823,6 +828,7 @@ TEST(LfeInhibit, NativeLfeStopsAutoGenerationForTheSession) {
 TEST(LfeInhibit, ResumesAfterDefaultSilenceInterval) {
     FeatureRig rig;
     rig.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Auto);
+    rig.params.expLfeGen = true;   // v1.6.0: generation is experimental
     CHECK(rig.configure(true));
     CHECK_NEAR(rig.params.lfeResetSeconds.load(), 10.0, 1e-6);   // default
     rig.run(1000, k51WithLfe);
@@ -840,6 +846,7 @@ TEST(LfeInhibit, ResumesAfterDefaultSilenceInterval) {
 TEST(LfeInhibit, AnySoundRestartsTheSilenceInterval) {
     FeatureRig rig;
     rig.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Auto);
+    rig.params.expLfeGen = true;   // v1.6.0: generation is experimental
     CHECK(rig.configure(true));
     rig.run(1000, k51WithLfe);
     rig.run(8000, 0);
@@ -853,6 +860,7 @@ TEST(LfeInhibit, AnySoundRestartsTheSilenceInterval) {
 TEST(LfeInhibit, ConfiguredIntervalIsApplied) {
     FeatureRig rig;
     rig.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Auto);
+    rig.params.expLfeGen = true;   // v1.6.0: generation is experimental
     rig.params.lfeResetSeconds = 20.0f;
     CHECK(rig.configure(true));
     rig.run(1000, k51WithLfe);
@@ -883,6 +891,7 @@ TEST(LfeInhibit, ResetIntervalBoundaries) {
     // 1 s: released after just over a second of silence.
     FeatureRig one;
     one.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Auto);
+    one.params.expLfeGen = true;   // v1.6.0: generation is experimental
     one.params.lfeResetSeconds = 1.0f;
     CHECK(one.configure(true));
     one.run(1000, k51WithLfe);
@@ -894,6 +903,7 @@ TEST(LfeInhibit, ResetIntervalBoundaries) {
     // 300 s: the clock jumps with no input (as when Windows plays nothing at all).
     FeatureRig longest;
     longest.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Auto);
+    longest.params.expLfeGen = true;   // v1.6.0: generation is experimental
     longest.params.lfeResetSeconds = 300.0f;
     CHECK(longest.configure(true));
     longest.run(1000, k51WithLfe);
@@ -909,6 +919,7 @@ TEST(LfeInhibit, ResetIntervalBoundaries) {
 TEST(LfeInhibit, SurvivesPipelineReconfiguration) {
     FeatureRig rig;
     rig.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Auto);
+    rig.params.expLfeGen = true;   // v1.6.0: generation is experimental
     CHECK(rig.configure(true));
     rig.run(1000, k51WithLfe);
     CHECK(rig.configure(true));                                  // e.g. format change / Lossless PCM re-open
@@ -921,6 +932,7 @@ TEST(LfeInhibit, SurvivesPipelineReconfiguration) {
 TEST(LfeInhibit, OffAndAlwaysKeepTheirBehaviour) {
     FeatureRig off;
     off.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Off);
+    off.params.expLfeGen = true;   // v1.6.0: generation is experimental
     CHECK(off.configure(true));
     off.run(5000, k51QuietLfe);
     CHECK(procOf(off) == ProcessingState::Discrete);
@@ -928,6 +940,7 @@ TEST(LfeInhibit, OffAndAlwaysKeepTheirBehaviour) {
     // The user's general "Always" is not affected by the latch (unchanged v1.2 behaviour).
     FeatureRig always;
     always.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Always);
+    always.params.expLfeGen = true;   // v1.6.0: generation is experimental
     CHECK(always.configure(true));
     always.run(1000, k51WithLfe);
     always.run(3000, k51QuietLfe);
@@ -937,6 +950,7 @@ TEST(LfeInhibit, OffAndAlwaysKeepTheirBehaviour) {
 TEST(GameLfe, OverridesGeneralSettingOnlyWhileGaming) {
     FeatureRig rig;
     rig.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Off);
+    rig.params.expLfeGen = true;   // v1.6.0: generation is experimental
     rig.params.gameLfeGen = true;
     CHECK(rig.configure(true));
     rig.run(3000, k51QuietLfe);                                  // no game: general "Off" applies
@@ -963,6 +977,7 @@ TEST(GameLfe, OverridesGeneralSettingOnlyWhileGaming) {
 TEST(GameLfe, RespectsNativeLfeInhibit) {
     FeatureRig rig;
     rig.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Off);
+    rig.params.expLfeGen = true;   // v1.6.0: generation is experimental
     rig.params.gameLfeGen = true;
     rig.params.gamingActive = true;
     CHECK(rig.configure(true));
@@ -1084,6 +1099,7 @@ TEST(NoSub, NeverGeneratesLfe) {
     // Every generation path - Always, Auto on a confirmed 5.0 source, Game Mode's toggle.
     FeatureRig rig;
     rig.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Always);
+    rig.params.expLfeGen = true;   // v1.6.0: generation is experimental
     rig.params.gameLfeGen = true;
     rig.params.gamingActive = true;
     rig.params.upmixMode = static_cast<uint32_t>(UpmixMode::Passthrough);
@@ -1093,7 +1109,8 @@ TEST(NoSub, NeverGeneratesLfe) {
     CHECK(rig.core.stats.lfeGenGain.load() == 0.0f);
     CHECK(!rig.core.stats.lfeGameOverride.load());
     CHECK(lfeStatusOf(rig) == LfeStatus::None);
-    CHECK_EQ(rig.core.stats.encoderChannels.load(), 5u);     // 5.0 stays 5.0
+    CHECK_EQ(rig.core.stats.encoderChannels.load(), 6u);     // 5.1 frame (the input format has an LFE)...
+    CHECK(rig.outRmsDb(LFE) < -90.0f);                       // ...but nothing is generated into it
     rig.params.gamingActive = false;
     rig.run(2500, 0b11, 0b11);                               // stereo: no 2.0 -> 2.1 either
     CHECK(procOf(rig) == ProcessingState::StereoKept);
@@ -1101,27 +1118,130 @@ TEST(NoSub, NeverGeneratesLfe) {
     CHECK(rig.outRmsDb(LFE) < -90.0f);
 }
 
-TEST(NoSub, SourceLfeIsFoldedNotLost) {
-    // 5.1 with bass only on its LFE: folded, the fronts carry it; fold off: discarded and said so.
-    FeatureRig fold, drop;
-    fold.params.upmixMode = drop.params.upmixMode = static_cast<uint32_t>(UpmixMode::Passthrough);
-    drop.params.lfeFold = false;
+TEST(NoSub, ExperimentalFoldIsOptionalAndGated) {
+    // 5.1 with bass only on its LFE, no subwoofer. A saved fold setting (lfeFold, default on) is
+    // ignored while the experimental gate is off: the LFE is passed through.
+    FeatureRig pass, fold;
+    pass.params.upmixMode = fold.params.upmixMode = static_cast<uint32_t>(UpmixMode::Passthrough);
+    fold.params.expLfeFold = true;
+    CHECK(pass.params.lfeFold.load());                       // the saved setting is on...
+    CHECK(pass.configure(false));
     CHECK(fold.configure(false));
-    CHECK(drop.configure(false));
+    pass.run(2500, 0b11000111, 0b1000);
     fold.run(2500, 0b11000111, 0b1000);
-    drop.run(2500, 0b11000111, 0b1000);
+    CHECK(lfeStatusOf(pass) == LfeStatus::Source);           // ...but not honoured without the gate
+    CHECK(pass.outRmsDb(LFE) > -30.0f);
+    CHECK_EQ(pass.core.stats.encoderChannels.load(), 6u);
+    // Gate on: folded into the fronts (1 kHz + 50 Hz at the same level -> about +1.6 dB rms with
+    // the -3 dB fold), sent as 5.0, status and flag say so.
+    CHECK(lfeStatusOf(fold) == LfeStatus::Folded);
+    CHECK(fold.core.stats.lfeFolded.load());
+    CHECK(fold.core.stats.lfeFoldOptional.load());           // reported as the experimental fold
+    CHECK(!pass.core.stats.lfeFoldOptional.load());
+    CHECK(fold.outRmsDb(LFE) < -90.0f);
+    CHECK(fold.outRmsDb(FL) > pass.outRmsDb(FL) + 1.0f);
+    CHECK_EQ(fold.core.stats.encoderChannels.load(), 5u);
+    CHECK(linToDb(fold.core.lfeFoldMeter.rms(0)) > -30.0f);
+    // Gate on but the fold setting off: passed through again (live, no restart). Never discarded.
+    fold.params.lfeFold = false;
+    fold.run(1000, 0b11000111, 0b1000);
     CHECK(lfeStatusOf(fold) == LfeStatus::Source);
-    CHECK(lfeStatusOf(drop) == LfeStatus::Dropped);
-    // Folded bass adds to the fronts (1 kHz + 50 Hz at the same level -> about +1.6 dB rms with
-    // the -3 dB fold); discarded leaves the 1 kHz tone alone.
-    CHECK(fold.outRmsDb(FL) > drop.outRmsDb(FL) + 1.0f);
-    CHECK(fold.outRmsDb(LFE) < -90.0f && drop.outRmsDb(LFE) < -90.0f);
-    CHECK(linToDb(drop.core.lfeFoldMeter.rms(0)) > -30.0f);  // the meter shows what is discarded
-    // Switching the fold on is live (no restart).
-    drop.params.lfeFold = true;
-    drop.run(1000, 0b11000111, 0b1000);
-    CHECK(lfeStatusOf(drop) == LfeStatus::Source);
-    CHECK(drop.outRmsDb(FL) > fold.outRmsDb(FL) - 0.5f);
+    CHECK(fold.outRmsDb(LFE) > -30.0f);
+    CHECK(lfeStatusOf(fold) != LfeStatus::Dropped);
+}
+
+TEST(NoSub, FoldIsNeverActiveWithASubwoofer) {
+    FeatureRig rig;
+    rig.params.upmixMode = static_cast<uint32_t>(UpmixMode::Passthrough);
+    rig.params.expLfeFold = true;
+    CHECK(rig.configure(true));
+    rig.run(2500, 0b11000111, 0b1000);
+    CHECK(lfeStatusOf(rig) == LfeStatus::Source);
+    CHECK(rig.outRmsDb(LFE) > -30.0f);
+}
+
+TEST(NoSub, StereoUpmix51EncodesFiveZero) {
+    FeatureRig rig;
+    rig.params.upmixMode = static_cast<uint32_t>(UpmixMode::Upmix51);
+    CHECK(rig.configure(false));
+    // v1.6.1: the source must differ between left and right. The upmixer feeds the surrounds from
+    // the difference signal (L - R), so the identical L/R tones used before correctly gave silent
+    // surrounds and the SL check failed. 1 kHz on the left only + 50 Hz bass on both.
+    rig.run(1500, 0b01, 0b11);
+    CHECK(procOf(rig) == ProcessingState::StereoUpmix51);
+    CHECK_EQ(rig.core.stats.encoderChannels.load(), 5u);     // real 5.0: the upmix creates no LFE without a sub
+    CHECK(rig.outRmsDb(LFE) < -90.0f);                       // ...even with bass in the source
+    CHECK(rig.outRmsDb(SL) > -60.0f);                        // the surrounds of the 5.0 carry the upmix
+    CHECK(rig.outRmsDb(SR) > -60.0f);
+}
+
+TEST(Generation, OffByDefaultEvenWithASavedMode) {
+    // New install and every upgrade: the experimental gate is off. A saved Auto / Always mode
+    // and Game Mode's toggle are kept but do not synthesise an LFE.
+    FeatureRig rig;
+    CHECK(!rig.params.expLfeGen.load());
+    rig.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Always);
+    rig.params.gameLfeGen = true;
+    rig.params.gamingActive = true;
+    CHECK(rig.configure(true));
+    rig.run(5000, k51QuietLfe, 0b100);                       // 5.0 with bass in the centre
+    CHECK(procOf(rig) == ProcessingState::Discrete);
+    CHECK(rig.core.stats.lfeGenGain.load() == 0.0f);
+    CHECK(!rig.core.stats.lfeGameOverride.load());
+    CHECK(rig.outRmsDb(LFE) < -90.0f);
+    CHECK(lfeStatusOf(rig) == LfeStatus::None);
+    // Enabling the gate restores the saved behaviour (Game Mode override, Always semantics).
+    rig.params.expLfeGen = true;
+    rig.run(1500, k51QuietLfe, 0b100);
+    CHECK(procOf(rig) == ProcessingState::LfeGen);
+    CHECK(rig.core.stats.lfeGameOverride.load());
+    CHECK(rig.outRmsDb(LFE) > -40.0f);
+    // And switching it off again fades the generated LFE out.
+    rig.params.expLfeGen = false;
+    rig.run(1500, k51QuietLfe, 0b100);
+    CHECK(rig.core.stats.lfeGenGain.load() == 0.0f);
+}
+
+TEST(Chime, PlaysOncePerRequestThroughTheFronts) {
+    FeatureRig rig;
+    rig.params.upmixMode = static_cast<uint32_t>(UpmixMode::Passthrough);
+    CHECK(rig.configure(true));
+    rig.run(500, 0);                                         // silence: nothing on the fronts
+    CHECK(rig.outRmsDb(FL) < -90.0f);
+    rig.params.chimeRequest.fetch_add(1);
+    rig.run(200, 0);
+    CHECK(rig.outRmsDb(FL) > -50.0f && rig.outRmsDb(FR) > -50.0f);
+    CHECK(rig.outRmsDb(FC) < -90.0f && rig.outRmsDb(SL) < -90.0f && rig.outRmsDb(LFE) < -90.0f);
+    CHECK(rig.core.stats.chimeActive.load());
+    CHECK(rig.core.outputMeters.peak(FL) <= ActivationChime::kPeak * 1.05f);   // gentle level
+    rig.run(1500, 0);                                        // ~0.9 s long: over...
+    CHECK(!rig.core.stats.chimeActive.load());
+    const float after = rig.outRmsDb(FL);
+    rig.run(1000, 0);                                        // ...and not repeated: the meter only decays
+    CHECK(rig.outRmsDb(FL) < after - 10.0f);
+}
+
+TEST(Chime, MuteAllSuppressesItAndOldRequestsAreNotReplayed) {
+    FeatureRig rig;
+    rig.params.chimeRequest = 5;                             // requests from before this pipeline
+    CHECK(rig.configure(true));
+    rig.run(300, 0);
+    CHECK(!rig.core.stats.chimeActive.load());
+    rig.params.muteAll = true;
+    rig.params.chimeRequest.fetch_add(1);
+    rig.run(300, 0);
+    CHECK(!rig.core.stats.chimeActive.load());
+}
+
+TEST(Chime, WaveformIsShortSoftAndEndsInSilence) {
+    ActivationChime c;
+    c.prepare(48000.0);
+    CHECK_EQ(c.length(), size_t(0.9 * 48000));
+    float peak = 0.0f;
+    for (size_t i = 0; i < c.length(); ++i) peak = std::max(peak, std::fabs(c.sample(i)));
+    CHECK_NEAR(peak, ActivationChime::kPeak, 0.002);
+    CHECK(std::fabs(c.sample(0)) < 0.01f);                   // soft attack, no click
+    CHECK_NEAR(c.sample(c.length() - 1), 0.0, 1e-6);         // ends in exact silence
 }
 
 TEST(NoSub, FullScaleFoldDoesNotClip) {
@@ -1130,6 +1250,7 @@ TEST(NoSub, FullScaleFoldDoesNotClip) {
     rig.amp = 0.99f;
     rig.bassAmp = 0.99f;
     rig.params.upmixMode = static_cast<uint32_t>(UpmixMode::Passthrough);
+    rig.params.expLfeFold = true;                            // v1.6.0: the optional fold is experimental
     CHECK(rig.configure(false));
     rig.run(2500, 0b11000111, 0b1011);                       // 50 Hz on FL, FR and the LFE as well
     const float ceiling = dbToLin(-0.3f) * 1.001f;
@@ -1145,9 +1266,14 @@ TEST(NoSub, Pcm20FoldsLfeEvenWithASubwoofer) {
     FeatureRig rig;
     rig.params.upmixMode = static_cast<uint32_t>(UpmixMode::Passthrough);
     rig.params.lfeGenMode = static_cast<uint32_t>(LfeGenMode::Always);
+    rig.params.expLfeGen = true;   // v1.6.0: generation is experimental
     CHECK(rig.configure(true, Codec::PCM, 2));
     rig.run(2500, 0b11000111, 0b1000);
-    CHECK(lfeStatusOf(rig) == LfeStatus::Source);
+    CHECK(lfeStatusOf(rig) == LfeStatus::Folded);            // required fold - the fold gate is off
+    CHECK(!rig.params.expLfeFold.load());
+    CHECK(!rig.core.stats.lfeFoldOptional.load());           // a format limit, not the experimental fold
+    CHECK(!rig.core.stats.lfeChannelOut.load());
+    CHECK(rig.core.stats.lfeFolded.load());
     CHECK(rig.core.stats.lfeGenGain.load() == 0.0f);
     CHECK_EQ(rig.core.stats.emitChannels.load(), 2u);
     CHECK(linToDb(rig.core.lfeFoldMeter.rms(0)) > -30.0f);

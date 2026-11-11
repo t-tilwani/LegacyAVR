@@ -1,7 +1,7 @@
 # LegacyAVR: Architecture Specification
 
 LegacyAVR turns a Windows 11 PC into a software *Dolby Digital Live / DTS Interactive* encoder. Games and
-apps render 5.1/7.1 PCM into a virtual 8-channel cable. `AVREngine.exe` captures that cable with
+apps render 5.1 PCM into a virtual cable (set to 5.1 since v1.6.0; a 7.1 cable is folded down). `AVREngine.exe` captures that cable with
 WASAPI loopback, folds it down or upmixes it to a 5.1 bus, encodes it in real time with FFmpeg
 `libavcodec`, wraps it in IEC 61937, and plays it through the HDMI ARC / S/PDIF device in WASAPI
 exclusive mode. To the AVR, the result looks just like a Blu-ray player's bitstream.
@@ -12,7 +12,7 @@ exclusive mode. To the AVR, the result looks just like a Blu-ray player's bitstr
 
 | Requirement | Implementation | Notes / limits |
 |---|---|---|
-| No kernel driver, Secure Boot stays on | VB-Audio cable configured as 7.1 + WASAPI loopback | Uses signed third-party cable driver only |
+| No kernel driver, Secure Boot stays on | VB-Audio cable configured as 5.1 (7.1 accepted and folded down) + WASAPI loopback | Uses signed third-party cable driver only. DD+ 7.1 encoding is being investigated but is not currently available |
 | AC-3 640/448 kbps | `ac3` float encoder, FLTP, 5.1 or 2.0 | Bitrates snap to the AC-3 table (32..640k) |
 | DTS 1509.75 / 754.5 kbps | `dca` encoder (FFmpeg *experimental*), 512-sample frames | 1509.75k → 2016-byte frames fit an IEC type-I burst *with* preamble |
 | E-AC-3 (no longer experimental since v1.3.0) | `eac3` encoder, IEC 61937 @ 192 kHz transport | **Max 1.024 Mbps** (11-bit frame size). **Not possible over optical/coax S/PDIF** (bandwidth); needs an HDMI ARC sink that advertises DD+ |
@@ -34,12 +34,12 @@ exclusive mode. To the AVR, the result looks just like a Blu-ray player's bitstr
 ```mermaid
 flowchart LR
     subgraph Apps["Games / apps"]
-        G[Game 7.1 PCM]
+        G[Game 5.1 PCM]
         D[Discord / Spotify]
     end
     G --> CABLE
     D --> CABLE
-    CABLE["VB-Audio cable<br/>(default device, 7.1 float)"]
+    CABLE["VB-Audio cable<br/>(default device, 5.1 float)"]
 
     subgraph ENGINE["AVREngine.exe / AVREngineService.exe"]
         CAP["WasapiCapture<br/>loopback, event-driven"]
@@ -318,7 +318,7 @@ Supporting mechanisms:
 
 ## 8. Input format detection and switching rules
 
-The cable endpoint is *always* 7.1 float, and Windows places a stereo game into FL/FR of that mix.
+The cable endpoint has a fixed layout (5.1 float recommended since v1.6.0; 7.1 is folded down), and Windows places a stereo game into FL/FR of that mix.
 The channel count of the endpoint therefore says nothing about the content. The engine detects the
 **live layout** by tracking which channels carried signal (> −70 dBFS) within a 1.5 s hold window.
 Since v1.2.0 a non-front channel only counts when it is also within 50 dB of the louder front
@@ -344,31 +344,54 @@ stateDiagram-v2
 | PCM 2.0 + *Passthrough* | L/R only; `stereoAs20` → 2.0 encoder | DD 2.0 (AVR may apply its own upmix) |
 | PCM 2.0 + *Lossless PCM 2.0* | after 1.5 s of stereo-only content the core requests PCM; `StereoPcmSwitch` confirms it for 300 ms and the host re-opens the output as exclusive PCM 2.0. Multichannel content, a test signal, pre-encoded input or game mode switch back to the bitstream format. The live reason (waiting / blocked by C, LFE … / game mode) is in telemetry `pcmSwitchText` | PCM 2.0 ⇄ DD 5.1 |
 | PCM 2.0 + game mode (v1.2) | no upmix, no PCM switching; stereo sent inside the 5.1 stream (no AVR re-sync when the game switches layouts) | DD 5.1 (fronts only) |
-| PCM 5.0 / 7.0 + LFE generation (v1.2) | `BassManager`: LR4 low-pass of the channel sum (upmixer crossover/level) written to LFE, 0.5 s fade-in, 0.3 s fade-out; *Auto* after 3 s of confirmed multichannel content without LFE, *Always* immediately (and also for stereo kept as stereo: 2.0 → 2.1) | DD 5.1 |
+| PCM 5.0 / 7.0 + LFE generation (v1.2; experimental since v1.6 - only while `LiveParams::expLfeGen` is set) | `BassManager`: LR4 low-pass of the channel sum (upmixer crossover/level) written to LFE, 0.5 s fade-in, 0.3 s fade-out; *Auto* after 3 s of confirmed multichannel content without LFE, *Always* immediately (and also for stereo kept as stereo: 2.0 → 2.1) | DD 5.1 |
 | PCM 5.1 / 7.1 whose LFE carries signal (v1.3) | native-LFE latch: the capture channel mapped to `SPEAKER_LOW_FREQUENCY` by the configured input mask (not the live layout) peaking above −60 dBFS sets `LiveParams::lfeInhibited`. While set, *Auto* and game-forced generation are held off (existing 0.3 s fade-out). It clears only after every input channel has stayed below −80 dBFS for `lfeResetSeconds` (default 10 s; whole seconds 1–300 since v1.4, 10–600 in v1.3). Kept in `LiveParams`, so it survives `configure()` / pipeline rebuilds and mode changes. General *Always* is not affected | DD 5.1 (source LFE) |
-| any + game mode + *LFE generation while gaming* (v1.3) | generation forced on with *Always* semantics (5.0 → 5.1, stereo → 2.1) while game mode is active, subject to the native-LFE latch; the general LFE-generation control is greyed out in the UI meanwhile | DD 5.1 |
-| any, *Dedicated subwoofer inactive* (v1.2; v1.5 rules) | no LFE is generated (general, *Always* and game-forced generation are all off; upmixer LFE dropped). The source's own LFE (after its trim) is low-passed (LR4 120 Hz) and added to FL/FR at −3 dB each (equal power, ramped), or discarded when `LiveParams::lfeFold` is off (`LfeStatus::Dropped`). The safety limiter after it keeps the −0.3 dBFS ceiling | DD/DTS **5.0** (5.1 with silent LFE if the encoder refuses 5.0); 3.x upmix: DD/DD+ **3.0**, DTS 5.0 with silent surrounds |
-| PCM 2.0 output (any subwoofer setting, v1.5) | no LFE channel exists: nothing is generated, the source LFE is folded (as above) before the stereo downmix | PCM 2.0 |
+| any + game mode + *LFE generation while gaming* (v1.3; v1.6: also needs `expLfeGen`) | generation forced on with *Always* semantics (5.0 → 5.1, stereo → 2.1) while game mode is active, subject to the native-LFE latch; the general LFE-generation control is greyed out in the UI meanwhile | DD 5.1 |
+| any, *Dedicated subwoofer inactive* (v1.2; v1.6 rules) | no LFE is generated (general, *Always* and game-forced generation are all off; upmixer LFE dropped, `CoreConfig::createsLfe()` false). The source's own LFE is **passed through** in the LFE channel whenever the block leaves with one (the main encoder stays 6 channels when the input format has an LFE - `mainEncoderChannels()`), for the AVR's bass management. It is folded - low-passed (LR4 120 Hz) and added to FL/FR at −3 dB each (equal power, ramped) - only when the block has no LFE channel (required, never discarded) or when `expLfeFold && lfeFold` (optional, experimental; the block then goes to the 5.0 encoder `enc5_`). `LfeStatus::Dropped` is no longer produced. The safety limiter keeps the −0.3 dBFS ceiling | DD/DTS **5.1** with the source LFE; stereo 5.0 upmix and the experimental fold: **5.0**; 3.x upmix: DD/DD+ **3.0**, DTS 5.x with silent surrounds; 5.0 when the input format has no LFE |
+| PCM 2.0 output (any subwoofer setting, v1.5) | no LFE channel exists: nothing is generated, the source LFE is folded (as above, required) before the stereo downmix | PCM 2.0 |
 | PCM 2.0 + *3.1 / 5.1 upmix* | `Upmixer` (centre steering, LFE LR4 80 Hz, delayed decorrelated surrounds) | DD/DD+ **3.1** (v1.5: real acmod 3/0 + LFE; DTS: 5.1 with silent surrounds) / DD 5.1 |
 | PCM 5.1 | direct routing (back or side surrounds → SL/SR) | DD 5.1 |
 | PCM 7.1 | discrete fold-down: SL' = 0.707·(SL + BL), SR' = 0.707·(SR + BR) | DD 5.1 |
 | IEC 61937 AC-3 / DTS | bypass all DSP, forward words bit-exact; renderer re-opened with the matching sub-format if needed (750 ms hysteresis) | original bitstream |
 
-Up to three encoder instances are opened up front, so switching between them never allocates: 2.0,
-the main 5.1 (5.0 without a subwoofer) and - v1.5.0, AC-3 / E-AC-3 only - 3.1 (3.0 without a
-subwoofer) for the stereo → 3.x upmix. FFmpeg's DTS encoder accepts only mono, stereo, 2/2, 5.0 and 5.1,
+Up to four encoder instances are opened up front, so switching between them never allocates: 2.0,
+the main 5.1 (5.0 only without a subwoofer when the input format has no LFE), - v1.5.0, AC-3 / E-AC-3
+only - 3.1 (3.0 without a subwoofer) for the stereo → 3.x upmix, and - v1.6.0, without a subwoofer -
+5.0 (`enc5_`) for the stereo 5.0 upmix and the experimental fold. FFmpeg's DTS encoder accepts only mono, stereo, 2/2, 5.0 and 5.1,
 so with DTS the 3.x upmix stays in the 5.x stream and `processingText` says "in a 5.x stream, surrounds
 silent". 7.0 / 7.1 cannot be sent: the bus and every encoder stop at 5.1, so 7.x is folded to 5.x and
-labelled as a fold-down; a 7.1 PCM device format carries 5.x with a silent back pair (the emit mask stays
+labelled as a fold-down (DD+ 7.1 encoding is being investigated but is not currently available; the 7.1
+pipeline is unchanged in v1.6.0); a 7.1 PCM device format carries 5.x with a silent back pair (the emit mask stays
 the device's slot layout so the meters line up; the labels come from `core/StatusText`).
 
 **LFE status (v1.3.0).** After each block the core reports where the LFE comes from, in priority order:
 TestSignal > Generated (generator gain > 0) > Source (multichannel input whose live mask has LFE) > Upmixed
-> Inhibited (latch holding generation off) > None. v1.5.0 adds Dropped (output without an LFE channel and
-the fold switched off). `core/StatusText` turns this into `lfeStatusText` ("Source LFE → folded into front
-L/R" / "Source LFE discarded" when the output has no LFE channel, a countdown while inhibited). Telemetry
-flags `TF2_LfeFold` and `TF2_NoLfeOutput` (v1.5.0, layout version unchanged) tell the dashboard which mode
-the LFE switch is in.
+> Inhibited (latch holding generation off) > None. v1.6.0: a source LFE is `Source` when passed through and
+`Folded` (7) when folded; `Dropped` (6, v1.5.0 only) is no longer produced. `core/StatusText` turns this into
+`lfeStatusText` ("From the source → passed through (no subwoofer: the AVR manages the bass)", "Source LFE →
+folded into front L/R (experimental fold …)" or "(this output has no LFE channel)", a countdown while
+inhibited). `CoreStats::lfeChannelOut`, `lfeFolded` and `lfeFoldOptional` are measured per block. Telemetry
+flags (layout v5 unchanged, additions only): `TF2_LfeFold` (the saved fold choice), `TF2_NoLfeOutput` (per
+block), v1.6.0 `TF2_ExpLfeGen` (1<<11), `TF2_ExpLfeFold` (1<<12), `TF2_LfeFolded` (1<<13) and
+`TF2_ChimePlaying` (1<<14).
+
+**Experimental gates (v1.6.0).** `LiveParams::expLfeGen` / `expLfeFold` (config keys `exp_lfe_gen`,
+`exp_lfe_fold`, commands `SET_EXP_LFE_GEN`, `SET_EXP_LFE_FOLD`) gate LFE generation (general, *Always*,
+game-forced) and the optional fold. They are stamped with `exp_gates_version` (`core/Version.h`); a file
+written by any other version - including every pre-1.6 file - loads them as off, so they are off for new
+installs and after every upgrade. The settings they guard (`lfe_gen`, `lfe_fold`, `game_lfe_gen`, profiles)
+are loaded and saved unchanged and simply not honoured while a gate is off. Profiles never carry the gates.
+The upmixer's own LFE (Dynamic 3.1 / 5.1 with a subwoofer) is part of the selected upmix mode, not
+"generation", and is not gated.
+
+**Activation chime (v1.6.0).** `core/Chime` synthesises a 0.9 s two-note cue (880 Hz then 1318.5 Hz, 4 ms
+attack, exponential decay, −24 dBFS peak, fade to exact zero) once at `prepare()`; the DSP thread mixes it
+into FL/FR before the limiter when `LiveParams::chimeRequest` is incremented (requests made while Mute All is
+on, or before a pipeline was configured, are dropped, never replayed). `PLAY_CHIME` replies `ERR` with the
+reason when it cannot play (pipeline stopped / not running, all muted, bit-exact passthrough). The dashboard's
+`ChimeScheduler` asks once when the pipeline first runs after start-up and once after an accepted
+`SET_INPUT_DEVICE` re-opens it; a refused selection, an error or a 15 s timeout cancels it. The engine refuses
+an input that is the output endpoint, so the cue cannot be captured back.
 
 **Streaming services.** Detecting Netflix / Prime Video / Disney+ / Crunchyroll is not implemented on
 purpose: WASAPI loopback of the cable delivers one mixed stream with no process, tab or URL information,
@@ -394,8 +417,9 @@ Each real block records what the DSP actually did (`ProcessingState`: stereo →
 stereo kept, stereo → PCM, 2.0 → 2.1, discrete, 5.0 → 5.1 LFE generation, 7.1 → 5.1 fold-down,
 bitstream, test). `core/StatusText` (portable, unit-tested) turns it into `processingText` from the
 output that really runs: "Stereo → 5.1 upmix", "Stereo → 3.0 upmix" without a subwoofer, "5.0 → 5.1 LFE
-generation", "5.1 → 5.0 (no LFE channel out) | LFE → front L/R", "7.1 → 5.0 fold-down", "No upmix
-(discrete 5.1)", "| downmixed to PCM 2.0". The dashboard never infers it from the selected mode.
+generation (experimental)", "No upmix (discrete 5.1) | LFE passed through", "5.1 → 5.0 | LFE → front L/R
+(experimental fold)", "7.1 → 5.1 fold-down", "| downmixed to PCM 2.0". The dashboard never infers it from
+the selected mode.
 
 ---
 
@@ -458,7 +482,9 @@ SET_GAIN 3 -4.5          -> OK / END            (live: atomic, ramped next block
 TEST PINK 21             -> OK / END            (pink noise on FL + C + SL, mask hex)
 SET_BUFFER_MS 0          -> OK / END            (v1.2: automatic, lowest safe margin)
 SET_SUB 0                -> OK / END            (v1.2: no subwoofer -> 5.0 / 3.0, no LFE generated; restart-level)
-SET_LFE_FOLD 1           -> OK / END            (v1.5: output without LFE - fold source LFE into FL/FR (1) or discard (0); live)
+SET_LFE_FOLD 1           -> OK / END            (v1.5; v1.6: no sub - fold source LFE into FL/FR (1) or pass it through (0); only while SET_EXP_LFE_FOLD 1; live)
+SET_EXP_LFE_GEN 1, SET_EXP_LFE_FOLD 1 -> OK / END (v1.6: experimental gates; saved, live, off after every upgrade)
+PLAY_CHIME               -> OK queued / END     (v1.6: activation chime; ERR <reason> when it cannot play)
 SET_LFE_GEN AUTO|ALWAYS|OFF, SET_GAMING AUTO|ON|OFF, SET_BASS -3   (v1.2: live)
 GAME_DETECTED 1 "game"   -> OK / END            (v1.2: dashboard heartbeat, expires after 6 s)
 SET_GAME_LFE 1           -> OK / END            (v1.3: force LFE generation while game mode is active; live)
@@ -545,14 +571,20 @@ boosts cannot clip; the safety limiter stays. Audition (`auditionChannel`) mutes
   policy units and the v3 telemetry layout. v1.5.0 adds: AC-3 3.0 / 3.1 decode loopback, the no-subwoofer
   rules (never generates, 3.0 / 5.0 encoders, DTS 5.x container), the filtered −3 dB LFE fold (power kept,
   ramped, discard mode), full-scale fold against the limiter ceiling, PCM 2.0 LFE fold, the status / layout
-  wording and the legacy-config defaults. A failed run now lists the failing tests by name at the
+  wording and the legacy-config defaults. v1.6.0 adds: experimental gates off by default, after an upgrade
+  and with saved values kept (config round trip and a file stamped by another version), generation only with
+  the gate, source-LFE pass-through without a subwoofer, the optional fold (gated, 5.0, status wording) and the
+  required PCM 2.0 fold, and the chime (one cue per request, mute suppression, waveform level and silent end). A failed run now lists the failing tests by name at the
   end, and `build.ps1` repeats them in its error message.
 * `LegacyAVR.Tests.exe --latency`: per-margin latency table (section 6.2).
 * `LegacyAVR.Tests.exe --bench`: 60 s of audio per scenario, prints µs per 1536-frame block and
   CPU % of one core against the 1 / 3 / 5 % targets.
 * `LegacyAVR.UI.Tests` (xUnit): telemetry struct layout (v3), culture-invariant protocol formatting,
   channel-strip gain behaviour, LFE-generation / game-mode tokens, format-support marking from
-  `IecCaps`, game-detector exclusions.
+  `IecCaps`, game-detector exclusions. v1.6.0 (`V16Tests.cs`): chime scheduling, typed EQ values
+  (parsing, ranges, rounding notes, last-valid-value on errors), EQ band copy (defaults, LFE limit, confirm,
+  empty selection, other bands kept, shelf Q kept), experimental defaults and profiles, telemetry bits, tab
+  order, Settings Guide controls, the README / installer / in-app 5.1 guidance and the version stamp.
 
 ---
 

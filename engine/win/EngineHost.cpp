@@ -227,6 +227,8 @@ void EngineHost::applyLiveParams() noexcept {
     params_.lfeGenMode = static_cast<uint32_t>(cfg_.lfeGen);
     params_.gameLfeGen = cfg_.gameLfeGen;
     params_.lfeFold = cfg_.lfeFold;
+    params_.expLfeGen = cfg_.expLfeGen;
+    params_.expLfeFold = cfg_.expLfeFold;
     params_.lfeResetSeconds = clampLfeResetSeconds(cfg_.lfeResetSeconds);
     params_.setEq(cfg_.eq);
     params_.upmixRevision.fetch_add(1, std::memory_order_release);
@@ -293,6 +295,7 @@ bool EngineHost::startPipeline(std::string& error) {
     oreq.passthroughIec = passthroughIec_;
     oreq.stereoPcmActive = stereoPcmActive_.load();
     oreq.dedicatedSub = cfg.dedicatedSub;
+    oreq.inputHasLfe = (inFmt.mask & SPK_LFE) != 0 || (inFmt.mask == 0 && inFmt.channels >= 6);
     oreq.devicePcmChannels = WasapiRenderer::queryMixChannels(cfg.outputDeviceId);
     const OutputPlan plan = planOutput(oreq);
     if (stereoPcmActive_ && !plan.stereoPcm) stereoPcmActive_ = false;   // mode / format changed meanwhile
@@ -401,7 +404,9 @@ bool EngineHost::startPipeline(std::string& error) {
              cc.bitstream() ? bitrateText(cc.bitrate) : std::format("{} ch", cc.pcmChannels),
              mode == OutputMode::Exclusive ? "exclusive" : "shared",
              stereoPcm ? " (lossless stereo PCM 2.0)" : "",
-             cc.dedicatedSub ? "subwoofer" : (cfg.lfeFold ? "no subwoofer: source LFE folded into the fronts" : "no subwoofer: source LFE discarded"),
+             cc.dedicatedSub ? (cfg.expLfeGen ? "subwoofer, LFE generation (experimental) on" : "subwoofer")
+                             : (cfg.expLfeFold && cfg.lfeFold ? "no subwoofer: source LFE folded into the fronts (experimental)"
+                                                               : "no subwoofer: source LFE passed through"),
              qs.marginFrames / 48.0, qs.floorFrames / 48.0, cfg.bufferMs == 0 ? "auto" : "user",
              cc.renderPeriodFrames / 48.0, cc.capturePacketFrames / 48.0);
     return true;
@@ -660,6 +665,8 @@ void EngineHost::publishTelemetry() noexcept {
         b.lfeResetSeconds = cfg.lfeResetSeconds;
         if (cfg.eq.enabled) flags2 |= ipc::TF2_EqEnabled;
         if (cfg.lfeFold) flags2 |= ipc::TF2_LfeFold;
+        if (cfg.expLfeGen) flags2 |= ipc::TF2_ExpLfeGen;
+        if (cfg.expLfeFold) flags2 |= ipc::TF2_ExpLfeFold;
         expireAudition(nowUs());
         b.auditionChannel = params_.auditionChannel.load();
         b.eqHeadroomDb = 0.0f;
@@ -724,8 +731,11 @@ void EngineHost::publishTelemetry() noexcept {
         b.outChannels = uint16_t(s.encoderChannels.load());
         b.outBitrate = cc.bitstream() ? normaliseBitrate(cc.codec, cc.bitrate, b.outChannels) : 0;
         const OutputShape shape{cc.bitstream(), cc.bitstream() ? int(b.outChannels) : int(cc.pcmChannels),
-                                cc.lfeOutput(), cfg.lfeFold, !cc.dedicatedSub};
+                                s.lfeChannelOut.load(), s.lfeFolded.load(), !cc.dedicatedSub, cfg.expLfeGen,
+                                s.lfeFoldOptional.load()};
         if (!shape.lfeOut) flags2 |= ipc::TF2_NoLfeOutput;
+        if (shape.lfeFolded) flags2 |= ipc::TF2_LfeFolded;
+        if (s.chimeActive.load()) flags2 |= ipc::TF2_ChimePlaying;
         b.outMode = uint16_t(cc.outputMode);
 
         b.dspLoadPercent = s.dspLoad.load() * 100.0f;
@@ -790,8 +800,8 @@ void EngineHost::publishTelemetry() noexcept {
             b.emitPeakDb[ch] = exists ? toDb(core_.emitMeters.peak(ch)) : kMinDb;
             b.emitRmsDb[ch] = exists ? toDb(core_.emitMeters.rms(ch)) : kMinDb;
         }
-        b.lfeFoldPeakDb = shape.lfeOut ? kMinDb : toDb(core_.lfeFoldMeter.peak(0));
-        b.lfeFoldRmsDb = shape.lfeOut ? kMinDb : toDb(core_.lfeFoldMeter.rms(0));
+        b.lfeFoldPeakDb = shape.lfeFolded ? toDb(core_.lfeFoldMeter.peak(0)) : kMinDb;
+        b.lfeFoldRmsDb = shape.lfeFolded ? toDb(core_.lfeFoldMeter.rms(0)) : kMinDb;
         b.driftPpm = s.driftPpm.load();
         b.correlation = s.correlation.load();
         b.dialogActivity = s.dialog.load();
@@ -834,12 +844,12 @@ void EngineHost::publishTelemetry() noexcept {
         if (passthrough && cc.bitstream())
             out = std::format("{} passthrough (bit-exact)", in.substr(0, in.find(" bitstream")));
         else if (cc.bitstream())
-            out = std::format("{} {} @ {} {}", codecName(cc.codec), encodedLayoutName(b.outChannels, shape.lfeOut),
+            out = std::format("{} {} @ {} {}", codecName(cc.codec), encodedLayoutName(b.outChannels, shape.lfeFolded),
                               bitrateText(b.outBitrate), rateText(kBusRate));
         else if (cc.stereoPcmOverride)
             out = std::format("PCM 2.0 @ 48 kHz - lossless stereo ({})", modeTxt);
         else
-            out = std::format("PCM {} @ 48 kHz ({})", pcmLayoutName(cc.pcmChannels, shape.lfeOut), modeTxt);
+            out = std::format("PCM {} @ 48 kHz ({})", pcmLayoutName(cc.pcmChannels, shape.lfeFolded), modeTxt);
         copyFixed(b.outputDescription, out);
         copyFixed(b.inputDevice, capture_.deviceName() + (capture_.isLoopback() ? " (loopback)" : ""));
         copyFixed(b.outputDevice, renderer_.deviceName() + " - " + renderer_.formatText());
@@ -885,6 +895,8 @@ std::string EngineHost::stateDump() {
     r.kv("gaming_active", params_.gamingActive.load() ? "1" : "0");
     r.kv("game_lfe_gen", c.gameLfeGen ? "1" : "0");
     r.kv("lfe_fold", c.lfeFold ? "1" : "0");
+    r.kv("exp_lfe_gen", c.expLfeGen ? "1" : "0");
+    r.kv("exp_lfe_fold", c.expLfeFold ? "1" : "0");
     r.kv("lfe_reset_s", std::format("{:.0f}", c.lfeResetSeconds));
     r.kv("eq_enabled", c.eq.enabled ? "1" : "0");
     for (size_t ch = 0; ch < kBusChannels; ++ch) {
@@ -1110,6 +1122,29 @@ std::string EngineHost::handleCommand(const std::string& line) {
             params_.gameLfeGen = *b;
             markDirty();
             return ok();
+        }
+        case Cmd::SetExpLfeGen:    // v1.6.0 experimental gates: live, no restart (generation and fold ramp)
+        case Cmd::SetExpLfeFold: {
+            const auto b = need(1) ? ipc::parseBool(a[0]) : std::nullopt;
+            if (!b) return bad("0|1");
+            {
+                std::lock_guard lk(cfgMutex_);
+                (req.cmd == Cmd::SetExpLfeGen ? cfg_.expLfeGen : cfg_.expLfeFold) = *b;
+            }
+            (req.cmd == Cmd::SetExpLfeGen ? params_.expLfeGen : params_.expLfeFold) = *b;
+            markDirty();
+            return ok();
+        }
+        case Cmd::PlayChime: {
+            // v1.6.0: the chime is mixed into the encoder input, so it plays only while the
+            // pipeline is processing PCM. Say why when it cannot, never pretend it played.
+            if (!audioEnabled_) return bad("the audio pipeline is stopped");
+            if (!pipelineUp_) return bad("the audio pipeline is not running");
+            if (muteAll_) return bad("all speakers are muted");
+            if (core_.stats.passthrough.load())
+                return bad("pre-encoded audio is passed through bit-exact, so nothing can be mixed into it");
+            params_.chimeRequest.fetch_add(1);
+            return Response::ok("queued").serialise();
         }
         case Cmd::SetLfeFold: {   // v1.5.0: live, no restart (the fold ramps)
             const auto b = need(1) ? ipc::parseBool(a[0]) : std::nullopt;

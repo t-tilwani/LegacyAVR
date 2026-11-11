@@ -26,6 +26,12 @@ public static class FactoryDefaults
     public const GamingKind Gaming = GamingKind.Off;
     public const bool GameLfeGen = true;
     public const bool LfeFold = true;
+    // v1.6.0: LFE generation and the optional LFE fold are experimental - their gates are off for
+    // new installs and after every upgrade (the saved settings they guard are kept, not honoured).
+    public const bool ExpLfeGen = false;
+    public const bool ExpLfeFold = false;
+    /// <summary>v1.6.0: activation chime on by default.</summary>
+    public const bool ActivationChime = true;
 
     // Native-LFE "resume after silence": whole seconds from 1 to 300, 10 recommended.
     public const double LfeResetSeconds = 10.0;
